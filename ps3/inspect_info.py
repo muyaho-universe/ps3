@@ -1,4 +1,4 @@
-from simplify import simplify, equal
+from simplify import simplify, equal, show_equal
 
 
 class InspectInfo:
@@ -30,6 +30,32 @@ class InspectInfo:
                 for i in range(len(self.ins)):
                     if not equal(self.ins[i], __o.ins[i]):
                         return False
+                return True
+            else:
+                print(self)
+                assert False, "Not implemented"
+        return False
+    
+    def show_eq(self, other):
+        if isinstance(other, InspectInfo):
+            if isinstance(self.ins, tuple) and isinstance(other.ins, tuple):
+                print(f"self: {self}")
+                print(f"other: {other}")
+                print(f"self.ins: {self.ins}")
+                print(f"other.ins: {other.ins}")
+                print(f"len(self.ins): {len(self.ins)}")
+                print(f"len(other.ins): {len(other.ins)}")
+                if len(self.ins) != len(other.ins):
+                    return False
+                for i in range(len(self.ins)):
+                    print(f"show_equal(self.ins[i], other.ins[i]): {show_equal(self.ins[i], other.ins[i])}")
+                    if not show_equal(self.ins[i], other.ins[i]):
+                        return False
+                    print(f"self.ins[{i}]: {self.ins[i]}")
+                    print(f"self.ins[{i}] type: {type(self.ins[i])}") 
+                    print(f"other.ins[{i}]: {other.ins[i]}")
+                    print(f"other.ins[{i}] type: {type(other.ins[i])}")
+                print("\n")
                 return True
             else:
                 print(self)

@@ -28,6 +28,25 @@ def equal(expr1: pe.IRExpr, expr2: pe.IRExpr) -> bool:
         return True
     return equal_z3(to_z3(expr1), to_z3(expr2))
 
+def show_equal(expr1: pe.IRExpr, expr2: pe.IRExpr) -> bool:
+    if isinstance(expr1, int) or isinstance(expr1, str):
+        return expr1 == expr2
+    if isinstance(expr1, list):
+        print("expr1 is list")
+        if not isinstance(expr2, list):
+            return False
+        if len(expr1) != len(expr2):
+            return False
+        for i in range(len(expr1)):
+            print(f"i: {i}")
+            print(f"expr1[i]: {expr1[i]}")
+            print(f"expr2[i]: {expr2[i]}")
+            if not equal(expr1[i], expr2[i]):
+                return False
+        return True
+    print("to_z3(expr1): ", to_z3(expr1))
+    print("to_z3(expr2): ", to_z3(expr2))
+    return show_equal_z3(to_z3(expr1), to_z3(expr2))
 
 def to_z3(expr):
     try:
@@ -164,6 +183,38 @@ def equal_z3(expr1, expr2):
                 return prove(expr1_simplify == expr2_simplify)
             except Exception:
                 return False
+        return False
+    
+def show_equal_z3(expr1, expr2):
+    print("in show_equal_z3")
+    print(f"expr1: {expr1}")
+    expr1_simplify = simplify_z3(expr1)
+    print(f"expr1_simplify: {expr1_simplify}")
+    print(f"expr2: {expr2}")
+    expr2_simplify = simplify_z3(expr2)
+    print(f"expr2_simplify: {expr2_simplify}")
+    result = z3.eq(expr1_simplify, expr2_simplify)
+    print(f"result: {result}")
+    if result:
+        return True
+    else:
+        # use prove to check if the two expr are equal semanticly
+        if 'If' in str(expr1_simplify) and 'If' in str(expr2_simplify):
+            try:
+                return prove(expr1_simplify == expr2_simplify)
+            except Exception:
+                return False
+        return False
+    
+def show_prove(f):
+    s = z3.Solver()
+    print(f"z3.Not(f): {z3.Not(f)}")
+    s.add(z3.Not(f))
+    print(f"s.check(): {s.check()}")
+    print(f"s.check() == z3.unsat: {s.check() == z3.unsat}")
+    if s.check() == z3.unsat:
+        return True
+    else:
         return False
 
 

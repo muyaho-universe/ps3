@@ -71,11 +71,14 @@ class Put(Statement):
         self.stmt = stmt
 
     def simulate(self, env: Environment, inspect: bool = False) -> None | InspectInfo:
+        # print("Put simulating")
         data = reduce(self.stmt.data, env)
+        # print("POPO2: ", data)
         env.set_reg(self.stmt.offset, data)
         if inspect:
             # if write to rip, then ignore it
             if self.stmt.offset != 184: 
+                # print("Put", self.stmt.offset, " data: ",data)
                 return InspectInfo(("Put", self.stmt.offset, data))
 
 class PutI(Statement):
@@ -90,6 +93,7 @@ class Store(Statement):
         self.stmt = stmt
     
     def simulate(self, env: Environment, inspect: bool = False) -> None | InspectInfo:
+        # print("Store simulating")
         data = reduce(self.stmt.data, env)
         addr = reduce(self.stmt.addr, env)
         env.set_mem(addr, data)
@@ -105,6 +109,7 @@ class WrTmp(Statement):
         self.stmt = stmt
         
     def simulate(self, env: Environment, inspect: bool = False) -> None:
+        # print("WrTmp simulating")
         data = reduce(self.stmt.data, env)
         env.set_tmp(self.stmt.tmp, data)
         
@@ -113,6 +118,7 @@ class Exit(Statement):
         self.stmt = stmt
     
     def simulate(self, env: Environment, inspect: bool = False) -> IRExpr:
+        # print("Exit simulating")
         guard = reduce(self.stmt.guard, env)
         dst = reduce(self.stmt.dst, env)
         offsIP = self.stmt.offsIP

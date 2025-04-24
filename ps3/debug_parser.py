@@ -3,6 +3,7 @@ import logging
 import subprocess
 import os
 from settings import ADDR2LINE
+from log import *
 
 VULN = 0
 PATCH = 1
@@ -44,6 +45,7 @@ class DebugParser:
                 if len(tokens) != 0:
                     addr.append(int(tokens[0], 16))
                 i += 1
+            # print("addr:", addr)
             dic = self._addr_from_lines(addr)
             assert funcname is not None
             dic = {funcname: dic}
@@ -66,6 +68,7 @@ class DebugParser:
                         except ValueError:
                             continue
             assert funcname is not None
+            
             dic = self._addr_from_lines(addr)
             dic = {funcname: dic}
             return dic
@@ -77,27 +80,35 @@ class DebugParser:
         assert self.binary_path is not None
         dic = {}
         addr_list = [hex(addr) for addr in addr_list]
+        # print("self.binary_path:", self.binary_path)
         p = subprocess.Popen([ADDR2LINE, '-afip', '-e', self.binary_path],
                              stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         addr_str = '\n'.join(addr_list)
         output, errors = p.communicate(input=addr_str.encode('utf-8'))
+        # print("output:", output)
         if errors:
             print('Error:', errors.decode('utf-8'))
         else:
             for line in output.decode('utf-8').splitlines():
                 l = line.strip()
+                
                 if l.startswith('0x'):
                     # E.g.
                     # 0xffffffc000a7aa9c: wcdcal_hwdep_ioctl_shared at /home/hang/pm/src-angler-20160801/sound/soc/codecs/wcdcal-hwdep.c:59
                     # 0xffffffc000a7ab18: wcdcal_hwdep_ioctl_shared at /home/hang/pm/src-angler-20160801/sound/soc/codecs/wcdcal-hwdep.c:77 (discriminator 1)
-                    tokens = l.split(':')
-                    addr = int(tokens[0], 16)
-                    func = tokens[1].split(' ')[1]
-                    lno = int(tokens[2].split(' ')[0])
-                    if lno in dic:
-                        dic[lno].append(addr)
-                    else:
-                        dic[lno] = [addr]
+                    # print("l:", l)
+                    try:
+                        tokens = l.split(':')
+                        addr = int(tokens[0], 16)
+                        func = tokens[1].split(' ')[1]
+                        lno = int(tokens[2].split(' ')[0])
+                        if lno in dic:
+                            dic[lno].append(addr)
+                        else:
+                            dic[lno] = [addr]
+                    except ValueError:
+                        logger.warn(f'Unrecognized ADDR2LINE output {l} !!!')
+                        continue
                 elif 'inlined by' in l:
                     # E.g.
                     # (inlined by) wcdcal_hwdep_ioctl_shared at /home/hang/pm/src-angler-20160801/sound/soc/codecs/wcdcal-hwdep.c:66
@@ -115,6 +126,7 @@ class DebugParser:
 
     @classmethod
     def from_binary(cls, binary_path: str, funcnames: list[str]):
+        # print("in Debugparser's from_binary: ", binary_path)
         debug_infos = []
         for func_name in funcnames:
             if os.uname().sysname == 'Linux':
@@ -125,6 +137,7 @@ class DebugParser:
                 raise NotImplementedError(
                     f'Unsupported OS {os.uname().sysname} !!!')
             try:
+                # print("cmd:", cmd)
                 info = subprocess.check_output(
                     cmd, shell=True).decode('utf-8').splitlines()
             except subprocess.CalledProcessError:
@@ -137,6 +150,12 @@ class DebugParser:
         return funcname in self.parse_result and src_line_number in self.parse_result[funcname]
 
     def line2addr(self, funcname: str, src_line_number: int) -> list[int]:
+        # print(f"funcname: {funcname}, src_line_number: {src_line_number}")
+        # print(f"is exists: {self.exists(funcname, src_line_number)}")
+        # print(f"is function in parse_result: {funcname in self.parse_result}")
+        # print(f"is src_line_number in parse_result[funcname]: {src_line_number in self.parse_result[funcname]}")
+        # if not src_line_number in self.parse_result[funcname]:
+        #     print(f"self.parse_result[{funcname}]: {self.parse_result[funcname]}")
         if self.exists(funcname, src_line_number):
             return self.parse_result[funcname][src_line_number]
         else:
@@ -147,6 +166,7 @@ class DebugParser:
 
 
 class DebugParser2:
+
     def __init__(self, vuln_parser: DebugParser, patch_parser: DebugParser):
         self.vuln_parser = vuln_parser
         self.patch_parser = patch_parser

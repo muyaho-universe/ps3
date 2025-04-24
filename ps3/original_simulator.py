@@ -11,8 +11,6 @@ from inspect_info import InspectInfo
 from diff_parser import Patterns
 from symbol_value import WildCardSymbol
 import time
-import lief
-from settings import *
 
 
 class FunctionNotFound(Exception):
@@ -21,10 +19,6 @@ class FunctionNotFound(Exception):
 
 logger = get_logger(__name__)
 logger.setLevel(INFO)
-file_handler = logging.FileHandler(LOG_PATH)
-file_handler.setLevel(logging.INFO)
-logger.addHandler(file_handler)
-ansi_escape = re.compile(r'\x1b\[[0-9;]*m')
 
 sys.setrecursionlimit(10000)
 
@@ -56,64 +50,36 @@ class State:
 
 
 class Simulator:
-    def __init__(self, proj: angr.Project, symbol=None) -> None:
-        # print("in Simulator")
+    def __init__(self, proj: angr.Project) -> None:
         self.proj = proj
-        self.symbol = symbol
 
     def _init_function(self, funcname: str):
-        # print("in _init_function")
         symbol = self.proj.loader.find_symbol(funcname)
         if symbol is None:
-            if self.symbol is not None:
-                symbol = self.symbol
-            else: 
-                raise FunctionNotFound(
-                    f"symbol {funcname} not found in binary {self.proj}")
+            raise FunctionNotFound(
+                f"symbol {funcname} not found in binary {self.proj}")
         self.funcname = funcname
-        # print(f"symbol.size: {symbol.size}")
-        
         cfg = self.proj.analyses.CFGFast(
-            regions=[(symbol.rebased_addr, symbol.rebased_addr + symbol.size)],
-            normalize=True,
-            force_complete_scan=True,
-            force_smart_scan=False
-        )
-        
+            regions=[(symbol.rebased_addr, symbol.rebased_addr + symbol.size)], normalize=True)
         function = None
-
         for func in cfg.functions:
-            if cfg.functions[func].name == 'sub_400000':
-                cfg.functions[func].name = funcname
-                function = cfg.functions[func]
-                break
             if cfg.functions[func].name == funcname:
                 function = cfg.functions[func]
                 break
-        # print(f"function: {function}")
-        # assert function is not None
-        if function is None:
-            logger.error(f"function {funcname} not found in binary {self.proj}")
-            raise FunctionNotFound(
-                f"function {funcname} not found in binary {self.proj}")
-        
+        assert function is not None
         self.graph = cfg.graph
-
         self.cfg = cfg
         self.function = function
         self._init_map()
 
     def _init_map(self):
-        # print("in _init_map")
         self.node2IR: dict[angr.knowledge_plugins.cfg.cfg_node.CFGNode,
                            list[stmt.Statement]] = {}
         self.addr2IR = {}
         addr = None
+
         for block in self.function.blocks:
-            # logger.info(f"block.vex: {block.vex}")
             for statement in block.vex.statements:
-                # print(f"statement: {statement}")
-                # exit(0)
                 if isinstance(statement, ps.IMark):
                     addr = statement.addr
                 stmtwrapper = stmt.Statement.construct(statement)
@@ -141,7 +107,6 @@ class Simulator:
             self.addr2Node[node.addr] = node
 
     def _reachable_set(self, addrs: set[int]) -> set:
-        # print("in _reachable_set")
         endnodes = []
         for addr in addrs:
             if addr not in self.addr2Node:
@@ -168,7 +133,6 @@ class Simulator:
         return visit
 
     def _reduce_addresses_by_basicblock(self, address: list[int]) -> set[int]:
-        # print("in _reduce_addresses_by_basicblock")
         l = list(self.function.blocks)
         result = set()
         for addr in address:
@@ -179,11 +143,7 @@ class Simulator:
         return result
 
     def generate_forall_bb(self, funcname: str, dic) -> dict:
-        # print("in generate_forall_bb")
-        try: 
-            self._init_function(funcname)
-        except FunctionNotFound:
-            raise FunctionNotFound(f"function {funcname} not found in binary {self.proj}")
+        self._init_function(funcname)
         all_addrs = []
         collect = {}
         for block in self.function.blocks:
@@ -211,7 +171,6 @@ class Simulator:
         return collect
 
     def generate(self, funcname: str, addresses: list[int], patterns) -> dict:
-        # print("in Simulator generate")
         if addresses[0] < self.proj.loader.main_object.min_addr:
             addresses = [(addr + self.proj.loader.main_object.min_addr)
                          for addr in addresses]
@@ -228,13 +187,14 @@ class Simulator:
         queue = [init_state]
         visit = set()
         while len(queue) > 0:  # DFS
+            # print(hexl(visit))
             state = queue.pop()
             if state.node.addr not in reachable:
                 continue
             if state.node.addr in visit:
                 continue
             # logger.debug(f"Now begin {hex(state.node.addr)}")
-            result = self._simulateBB(state, step_one=True)            
+            result = self._simulateBB(state, step_one=True)
             if isinstance(result, list):  # fork
                 visit.update(result[0].addrs)
                 trace.update(result[0].inspect)
@@ -245,55 +205,42 @@ class Simulator:
             #     visit.update(result.addrs)
             #     trace.update(result.inspect)
             #     queue.append(result)
-            # print(f"trace: {trace}")
         return trace
 
     def _simulateBB(self, state: State, step_one=False) -> list[State] | State:
-        # print("in _simulateBB")
-        # print(f"state.env: {state.env.show()}")
         while 1:
             state.addrs.append(state.node.addr)
             # print("=========================================")
-            # logger.info("=========================================")
-            # state.env.show_regs()
-            # logger.info("=========================================")
             # state.env.show_mems()
-            # logger.info("=========================================\n")
             # print("=========================================")
             # state.env.show_regs()
             # print("=========================================")
             # a = state.node.block.vex._pp_str()
             # print("a:",a)
             # for stmt in self.node2IR[state.node]:
-            #     logger.info(f"stmt: {stmt}")
+            #     print("stmt: ", stmt)
             # time.sleep(10)
             
             # input()
             for stmt in self.node2IR[state.node]:
-                machine_addr = self.IR2addr[stmt]                
+                machine_addr = self.IR2addr[stmt]
                 if machine_addr in self.inspect_addrs:
-                    # logger.info(f"machine_addr is in inspect_addrs: {hex(machine_addr)}")
-                    
+                    # print(f"{machine_addr} {stmt}") # debug
                     # when Exit stmt, return guard, else return tuple) else return None
                     cond = stmt.simulate(state.env, True)
-                    # if cond is not None:
-                       
-                    #     print(f"cond: {cond}")
                     basicblock_addr = state.node.addr
-                    # logger.info(f"basicblock_addr: {hex(basicblock_addr)}")
                     assert basicblock_addr in state.inspect
                     block = state.inspect[basicblock_addr]
-                    # logger.info(f"block: {block}")
                     if machine_addr not in block:
-                        # logger.info(f"machine_addr not in block")
                         block[machine_addr] = []
                     if isinstance(cond, InspectInfo):
-                        # logger.info(f"cond is InspectInfo")
                         block[machine_addr].append(cond)
+                        # print("RALO: ",block[machine_addr])
                     elif isinstance(cond, pe.IRExpr):  # guard it
+                        # print("MonG: ", cond)
                         block[machine_addr].append(
-                            InspectInfo(("Condition", cond))) 
-                    # logger.info(f"block2: {block}")                   
+                            InspectInfo(("Condition", cond)))
+                        # print("PAKA: ",block[machine_addr])
                 else:
                     cond = stmt.simulate(state.env)
             length = len(state.node.successors_and_jumpkinds(False))
@@ -394,9 +341,9 @@ class Simulator:
                         continue
                 return states
 
+
 class Signature:
     def __init__(self, collect: dict, funcname: str, state: str, patterns) -> None:
-        # print("in Signature")
         self.collect = collect
         self.funcname = funcname
         self.state = state
@@ -415,7 +362,6 @@ class Signature:
         return cls([collect_vuln, collect_patch], funcname, "modify", [remove_pattern, add_pattern])
 
     def _clean(self, collect):
-        # print("in _clean")
         collect_copy = collect.copy()
         for site in collect_copy:
             string = str(site)
@@ -463,7 +409,6 @@ class Signature:
             return self._serial(self.collect)
 
     def _serial(self, collect) -> tuple[list, list]:
-        # print("in _serial")
         l = []
         for bb in collect.keys():
             for addr_or_cons in collect[bb].keys():
@@ -485,39 +430,28 @@ class Signature:
             self._show(self.collect, self.state)
 
     def _show(self, collect, type="") -> None:
-        # print("=========================================", type)
-        logger.info(f"========================================= {type} signature")
+        print("=========================================", type)
         ser = self._serial(collect)
         for single_site in ser[0]:
-            # print(single_site)
-            logger.info(single_site)
-        # print("=========================================")
-        logger.info("=========================================")
+            print(single_site)
+        print("=========================================")
 
 
 def valid_sig(sigs: list[Signature]):
     exists_modify = False
-    # print("in valid_sig")
     for sig in sigs:
-        # print(f"sig.state: {sig.state}")
         if sig.state == "modify":
             exists_modify = True
             break
     if exists_modify:
         new_sigs = []
-        i = 0
         for sig in sigs:
-            # print(f"i: {i}")
-            i += 1
             if sig.state == "modify":
                 add, remove = sig.serial()
                 add = set(add[0])
                 remove = set(remove[0])
                 # breakpoint()
-                # print(f"add: {add}")
-                # print(f"remove: {remove}")
                 if add.issuperset(remove) or remove.issuperset(add):
-                    # print("add.issuperset(remove) or remove.issuperset(add)")
                     continue
                 new_sigs.append(sig)
         return new_sigs
@@ -525,9 +459,7 @@ def valid_sig(sigs: list[Signature]):
 
 
 def handle_pattern(patterns: Patterns | list[Patterns]) -> dict:
-    # print("in handle_pattern")
     def _handle_pattern(patterns: Patterns) -> dict:
-        # print("in _handle_pattern")
         dic = {}
         for pattern in patterns.patterns:
             if pattern.pattern == "If":
@@ -547,13 +479,11 @@ def handle_pattern(patterns: Patterns | list[Patterns]) -> dict:
 class Generator:
 
     def __init__(self, vuln_proj: angr.Project, patch_proj: angr.Project) -> None:
-        # print("in Generator")
         self.vuln_proj = Simulator(vuln_proj)
         self.patch_proj = Simulator(patch_proj)
 
     @classmethod
     def from_binary(cls, vuln_path: str, patch_path: str):
-        # print("in from_binary")
         proj1 = angr.Project(vuln_path, load_options={'auto_load_libs': False})
         proj2 = angr.Project(patch_path, load_options={
                              'auto_load_libs': False})
@@ -561,7 +491,6 @@ class Generator:
         return Generator(proj1, proj2)
 
     def generate(self, funcname: str, addresses: list[int], state: str, patterns: Patterns) -> dict:
-        # print("in Generator generate")
         patterns_ = handle_pattern(patterns)
         try:
             if state == "vuln":
@@ -597,202 +526,44 @@ def getbbs(collect) -> list:
 
 
 def extrace_effect(collect) -> list:
-    # logger.info(f"collect: {collect}")
     effect = []
     for bb in collect.keys():
         for addr_or_constraint in collect[bb]:
             if addr_or_constraint == "Constraints":
                 continue
             for single_site in collect[bb][addr_or_constraint]:
-                # logger.info(f"single_site: {single_site}")
                 effect.append(single_site)
-    # logger.info(f"effect: {effect}")
     return effect
 
-class Symbol:
-    """
-    Represents a symbol with the necessary attributes for CFG analysis.
-    """
-    def __init__(self, name: str, rebased_addr: int, size: int, is_function: bool = True):
-        """
-        Initializes the Symbol object.
-
-        :param name: The name of the symbol.
-        :param rebased_addr: The rebased address of the symbol.
-        :param size: The size of the symbol in bytes.
-        :param is_function: Whether the symbol represents a function.
-        """
-        self.name = name
-        self.rebased_addr = rebased_addr
-        self.size = size
-        self.is_function = is_function
-
-    def __repr__(self):
-        return (f"Symbol(name={self.name}, rebased_addr={hex(self.rebased_addr)}, "
-                f"size={self.size}, is_function={self.is_function})")
 
 class Test:
     def __init__(self, sigs: dict[str, list[Signature]]) -> None:
         self.sigs = sigs
 
     def test_path(self, binary_path: str) -> str:
-        try:
-            project = angr.Project(binary_path)
-            simulator = Simulator(project)
-            
-        except Exception as e:
-            # print(f"Error testing path: {e}")
-            # exit(1)
-            modified_binary_path = binary_path.replace(".bin", "_modified.bin")
-            self.insert_function_names(binary_path, modified_binary_path)
-            # print(f"Modified binary saved to: {modified_binary_path}")
-
-            project = angr.Project(
-                modified_binary_path,
-                main_opts={
-                    'backend': 'blob',
-                    'arch': 'x86_64',
-                    'base_addr': 0x400000
-                }
-            )
-
-            # 삽입된 데이터를 기반으로 커스텀 심볼 테이블 초기화
-            size = self._initialize_symbols_from_binary(project)
-            # print(f"size: {size}")  
-            # print("\n=== Binary Assembly ===")
-            # self._print_assembly_with_labels(project)
-            # time.sleep(10)
-            for f in self.sigs.keys():
-                func_name = f
-                break
-            
-            simulator = Simulator(project, Symbol(name=func_name, rebased_addr=0x400000, size=size))
-
-        
+        project = angr.Project(binary_path)
+        simulator = Simulator(project)
         return self.test_project(simulator)
-        
-    def insert_function_names(self, binary_path: str, output_path: str):
-        """
-        바이너리에 함수 이름과 주소 추가
-        """
-        with open(binary_path, "rb") as f:
-            binary_data = f.read()
-
-        # 함수 이름과 주소 데이터 생성
-        func_data = []
-        base_addr = 0x400000  # 가정: 기본 주소
-        for idx, func_name in enumerate(self.sigs.keys()):
-            func_addr = base_addr + (idx * 0x200)  # 가정: 각 함수의 주소는 0x100 간격
-            func_data.append(f"{func_name}:{func_addr:#x}")
-
-        custom_func_data = "\n".join(func_data) + "\n"
-        # print(f"Inserting function names and addresses:\n{custom_func_data}")
-        func_names_data = b"FUNC_NAMES_START\n" + custom_func_data.encode("utf-8") + b"FUNC_NAMES_END\n"
-        # func_names_data = b"FUNC_NAMES_END\n"
-        
-        # 바이너리 끝에 데이터 추가
-        modified_binary_data = binary_data + func_names_data
-
-        # 수정된 바이너리 저장
-        with open(output_path, "wb") as f:
-            f.write(modified_binary_data)
-
-    def _initialize_symbols_from_binary(self, project):
-        """
-        삽입된 함수 이름과 주소를 읽어 커스텀 심볼 테이블에 저장
-        """
-        try:
-            binary_path = project.loader.main_object.binary
-            with open(binary_path, "rb") as f:
-                binary_data = f.read()
-
-            # 마커로 함수 데이터 추출
-            start_marker = b"FUNC_NAMES_START\n"
-            end_marker = b"FUNC_NAMES_END\n"
-            start_idx = binary_data.find(start_marker)
-            end_idx = binary_data.find(end_marker)
-
-            if start_idx == -1 or end_idx == -1:
-                raise ValueError("Function names markers not found in the binary.")
-
-            func_data = binary_data[start_idx + len(start_marker):end_idx].decode("utf-8").strip().split("\n")
-            # print(f"Detected function names and addresses: {func_data}")
-
-            # 커스텀 심볼 테이블 생성
-            self.custom_symbols = {}
-            for entry in func_data:
-                func_name, func_addr = entry.split(":")
-                func_addr = int(func_addr, 16)
-                self.custom_symbols[func_addr] = func_name
-            return start_idx 
-
-        except Exception as e:
-            print(f"Error initializing symbols: {e}")
-
-
-    
-        
-    def _print_assembly_with_labels(self, project):
-        """
-        커스텀 심볼 테이블을 사용하여 바이너리 어셈블리 코드에 라벨 추가
-        """
-        try:
-            addr = project.loader.min_addr
-            max_addr = addr + 0x500
-
-            # 커스텀 심볼 테이블에서 함수 이름 확인
-            while addr < max_addr:
-                if addr in self.custom_symbols:
-                    print(f"\n=== Function: {self.custom_symbols[addr]} ===")
-
-                # 현재 주소에서 블록 디스어셈블리 출력
-                block = project.factory.block(addr)
-                print(block.disassembly)
-                addr += block.size
-
-        except Exception as e:
-            print(f"Error printing assembly with labels: {e}")
-
-    def find_custom_symbol(self, funcname: str):
-        """
-        커스텀 심볼 테이블에서 함수 이름으로 주소 검색
-        """
-        for addr, name in self.custom_symbols.items():
-            if name == funcname:
-                return Symbol(name=name, rebased_addr=addr, size=0x100)
-        return None
-
 
     def test_project(self, simulator: Simulator) -> str:
         # if one think it's vuln, then it is vuln
         exist_patch = False
         results = []
         funcnames = self.sigs.keys()
-
         # check at least one function is in the binary, else return None
-        # for funcname in funcnames:
-        #     func_addr = self.find_custom_symbol(funcname)
-        #     if func_addr is not None:
-        #         # simulator.symbol = funcname
-
-        #         break
-        # else:
-        #     logger.critical(f"no function {funcnames} in the signature")
-        #     # exit(0)
-        #     assert False
+        for funcname in funcnames:
+            if simulator.proj.loader.find_symbol(funcname) is not None:
+                break
+        else:
+            logger.critical(f"no function {funcnames} in the signature")
+            assert False
         for funcname in self.sigs.keys():
             sigs = self.sigs[funcname]
-            # funcname = "ssl3_get_record"
-            # simulator = Simulator(simulator.proj)
-            # sigs = [<simulator.Signature object at 0x7fafd1f517e0>]
             result = self.test_func(funcname, simulator, sigs)
-            # print(f"result: {result}")
-            # time.sleep(10)
             if result == "vuln":
                 return "vuln"
             results.append(result)
-        # print(f"results: {results}")
-        # time.sleep(10)
+        print(results)
         for result in results:
             if result == "vuln":
                 return "vuln"
@@ -801,7 +572,6 @@ class Test:
         if exist_patch:
             return "patch"
         return "vuln"
-        # return "patch"
 
     def use_pattern(self, patterns: Patterns) -> str:
         for pattern in patterns.patterns:
@@ -829,17 +599,11 @@ class Test:
         dic = {}
         for sig in sigs:
             dic.update(handle_pattern(sig.patterns))
-            # print(f'{sig.funcname} {sig.state} {sig.patterns}') # ssl3_get_record modify [Patterns(patterns=[]), Patterns(patterns=[])]
-            # time.sleep(10)
         try:
             traces: dict = simulator.generate_forall_bb(funcname, dic)
-            # print(f"traces: {traces}")
-            # time.sleep(10)
         except FunctionNotFound:
-            print(f"FunctionNotFound: {funcname}")
             return None
         result = []
-        # TODO: 여기 고쳐야됨
         # test one hunk's signature
         for sig in sigs:
             if sig.state == "vuln":
@@ -861,24 +625,17 @@ class Test:
                 vuln_pattern), self.use_pattern(patch_pattern)
             vuln_effect = set(vuln_effect)
             patch_effect = set(patch_effect)
+            logger.info(f"vuln_effect: {vuln_effect}, patch_effect: {patch_effect}")
             vuln_effect, patch_effect = vuln_effect-patch_effect, patch_effect-vuln_effect
             if len(vuln_effect) == 0 and len(patch_effect) == 0:
                 continue
-            # logger.info(f"vuln_effect: {vuln_effect}")
-            # logger.info(f"patch_effect: {patch_effect}")
+            logger.info(f"{vuln_effect}, {patch_effect}")
             vuln_match, patch_match = [], []
             all_effects = extrace_effect(traces)
-            logger.info(f"all_effects: {set(all_effects)}")
-            # for effect in all_effects:
-            #     logger.info(f"effect: {effect}")
+            logger.info(f"{all_effects}")
             test = False
             # essential a add patch
             if len(vuln_effect) == 0:
-                # logger.info("pure addition")
-                # temp = len(patch_effect)
-                # for i in range(temp):
-                #     patch_effect = list(patch_effect)  # 리스트로 변환
-                #     patch = patch_effect[temp-i-1]
                 for patch in patch_effect:
                     if (patch.ins[0] == "Condition" or patch.ins[0] == "Call") and patch not in all_effects:
                         test = True
@@ -886,15 +643,11 @@ class Test:
                         break
             # essential a vuln patch
             if len(patch_effect) == 0:
-                # logger.info("pure deletion")
                 for vuln in vuln_effect:
                     if (vuln.ins[0] == "Condition" or vuln.ins[0] == "Call") and vuln not in all_effects:
                         test = True
-                        # logger.info(f"vuln {vuln} is not in all_effects")
                         result.append("patch")
                         break
-            # else:
-            #     logger.info("modify")
             if test:
                 continue
             for vuln in vuln_effect:
@@ -902,13 +655,8 @@ class Test:
                     vuln_match.append(vuln)
             for patch in patch_effect:
                 if patch in all_effects:
-                    # for i in all_effects:
-                    #     if i == patch:
-                    #         logger.info(f"patch {i} is in all_effects")
-                    #         i.show_eq(patch)
                     patch_match.append(patch)
             logger.info(f"vuln match {vuln_match}, patch match {patch_match}")
-            
             # If the pattern is If, then we should check there at least one condition in matched effect
             if patch_use_pattern == "If":
                 patch_match = [
@@ -923,7 +671,7 @@ class Test:
                     continue
             vuln_num = self._match2len(vuln_match)
             patch_num = self._match2len(patch_match)
-            # print(vuln_num, patch_num, funcname)
+            print(vuln_num, patch_num, funcname)
             if vuln_num == 0 and patch_num == 0:
                 continue
             if patch_num == vuln_num:
@@ -932,7 +680,6 @@ class Test:
                 return "vuln"
             result.append("patch" if patch_num > vuln_num else "vuln")
         if len(result) == 0:
-            print("result: None")
             return None
         # if one think it's vuln, then it is vuln
         if "vuln" in result:
@@ -941,4 +688,3 @@ class Test:
             return "patch"
         # if no vuln and patch, then it's vuln
         return "vuln"
-        # return "patch"

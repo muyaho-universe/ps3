@@ -2,6 +2,17 @@ import pyvex.expr as pe
 from simplify import simplify
 from symbol_value import *
 
+from settings import *
+from log import *
+import re
+
+logger = get_logger(__name__)
+logger.setLevel(INFO)
+file_handler = logging.FileHandler(LOG_PATH)
+file_handler.setLevel(logging.INFO)
+logger.addHandler(file_handler)
+ansi_escape = re.compile(r'\x1b\[[0-9;]*m')
+
 
 # x86_64 calling convention first 6 arguments are passed in registers
 Arg2Reg = {
@@ -74,11 +85,13 @@ class Environment:
     
     def show_regs(self):
         for key in self.regs:
-            print(f"reg{key}:", self.regs[key])
+            logger.info(f"reg{key}: {self.regs[key]}")
+            # print(f"reg{key}:", self.regs[key])
 
     def show_mems(self):
         for key in self.mems:
-            print(f"mem {key}:", self.mems[key])
+            logger.info(f"mem{key}: {self.mems[key]}")
+            # print(f"mem {key}:", self.mems[key])
     
     def show_tmps(self):
         for key in self.tmps:

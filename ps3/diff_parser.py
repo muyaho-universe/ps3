@@ -4,7 +4,8 @@ from pygments.lexers import get_lexer_by_name
 from pygments.token import Token
 from debug_parser import DebugParser2
 from dataclasses import dataclass
-
+from log import *
+from settings import *
 logger = logging.getLogger(__name__)
 
 
@@ -48,20 +49,39 @@ class DiffParser:
             diff = f.read()
         return cls(diff)
 
+    # def _get_function_name(self, section_header: str) -> str:
+    #     tokens = list(self.lexer.get_tokens(section_header))
+    #     # dirty hack to get function name, maybe parse tree is better
+    #     deep = 0
+    #     for i, token in reversed(list(enumerate(tokens))):
+    #         if token[0] == Token.Punctuation and token[1] == ')':
+    #             deep += 1
+    #         if token[0] == Token.Punctuation and token[1] == '(':
+    #             deep -= 1
+    #         if token[0] == Token.Name and tokens[i+1][0] == Token.Punctuation and tokens[i+1][1] == '(':
+    #             if deep > 0:
+    #                 continue
+    #             return token[1]
+    #     return None
     def _get_function_name(self, section_header: str) -> str:
         tokens = list(self.lexer.get_tokens(section_header))
-        # dirty hack to get function name, maybe parse tree is better
         deep = 0
-        for i, token in reversed(list(enumerate(tokens))):
+        for i in reversed(range(len(tokens))):
+            token = tokens[i]
             if token[0] == Token.Punctuation and token[1] == ')':
                 deep += 1
-            if token[0] == Token.Punctuation and token[1] == '(':
+            elif token[0] == Token.Punctuation and token[1] == '(':
                 deep -= 1
-            if token[0] == Token.Name and tokens[i+1][0] == Token.Punctuation and tokens[i+1][1] == '(':
-                if deep > 0:
-                    continue
-                return token[1]
+            elif token[0] == Token.Name:
+                j = i + 1
+                while j < len(tokens) and tokens[j][0] == Token.Text.Whitespace:
+                    j += 1
+                if j < len(tokens) and tokens[j][0] == Token.Punctuation and tokens[j][1] == '(':
+                    if deep > 0:
+                        continue
+                    return token[1]
         return None
+
 
     def _parse_patchfile(self, patch_file: PatchedFile) -> dict:
         dic = {}
@@ -168,11 +188,16 @@ class DiffParser:
                         list(filter(lambda x: x.is_removed, hunk.source_lines())))
                     added_lines = len(
                         list(filter(lambda x: x.is_added, hunk.target_lines())))
+                    # print(f"removed_lines: {removed_lines}, added_lines: {added_lines}")
                     for line in hunk.source_lines():
+                        # print(f"line in source: {line}, {line.is_removed}")
                         if line.is_removed:
                             temp_remove.append(line.value)
+                            # print(f"temp_remove: {temp_remove}, lineno: {line.source_line_no}")
                             binary_lines = vuln_parser.line2addr(
                                 funcname, line.source_line_no)
+                            # print binary_lines
+                            print(f"binary_lines: {binary_lines}")
                             if len(binary_lines) == 0:
                                 continue
                             pattern = self._decidepattern(line.value)
@@ -181,8 +206,10 @@ class DiffParser:
                             remove.extend(binary_lines)
                             # print(line, line.source_line_no, line.target_line_no, binary_lines)
                     for line in hunk.target_lines():
+                        # print(f"line in target: {line}, {line.is_added}")
                         if line.is_added:
                             temp_add.append(line.value)
+                            # print(f"temp_add: {temp_add}, lineno: {line.target_line_no}")
                             binary_lines = patch_parser.line2addr(
                                 funcname, line.target_line_no)
                             if len(binary_lines) == 0:

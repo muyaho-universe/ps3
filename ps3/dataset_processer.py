@@ -44,9 +44,9 @@ class Evaluator:
         ri = 0
         for test_result in results:
             if test_result.result == 'vuln' and test_result.test_json.ground_truth == 'vuln':
-                rr += 1
+                rr += 1 # TP
             if test_result.result == 'vuln' and test_result.test_json.ground_truth == 'patch':
-                ri += 1
+                ri += 1 # FP
         if rr + ri == 0:
             return 1
         return rr / (rr + ri)

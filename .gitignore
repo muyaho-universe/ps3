@@ -1,3 +1,5 @@
 .DS_Store
 /dataset/binary/**
 __pycache__
+*.txt
+*.csv

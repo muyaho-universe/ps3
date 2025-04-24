@@ -24,12 +24,12 @@ def run_one(tests: list[TestJson]) -> list[TestResult]:
     test_results = []
     test = tests[0]
 
-    # vuln_name, patch_name = f"{test.cve}_{test.commit[:6]}_vuln", f"{test.cve}_{test.commit[:6]}_patch"
-    vuln_name, patch_name = f"{test.cve}_vuln", f"{test.cve}_patch"
+    vuln_name, patch_name = f"{test.cve}_{test.commit[:6]}_vuln", f"{test.cve}_{test.commit[:6]}_patch"
+    # vuln_name, patch_name = f"{test.cve}_vuln", f"{test.cve}_patch"
     vuln_path, patch_path = f"{BINARY_PATH}/{test.project}/{vuln_name}", f"{BINARY_PATH}/{test.project}/{patch_name}"
 
-    # diff_name = f"{test.cve}_{test.commit[:6]}.diff"
-    diff_name = f"{test.cve}.diff"
+    diff_name = f"{test.cve}_{test.commit[:6]}.diff"
+    # diff_name = f"{test.cve}.diff"
     diff_path = f"{DIFF_PATH}/{diff_name}"
     # print(diff_path)
    
@@ -39,11 +39,10 @@ def run_one(tests: list[TestJson]) -> list[TestResult]:
     funcnames = []
     for diffs in diffparser.parse_result:
         funcnames.extend(list(diffs['functions'].keys()))
-    # print(funcnames)
     debugparser2 = DebugParser2.from_binary(vuln_path, patch_path, funcnames)
     binary_diffs = diffparser.get_binarylevel_change(debugparser2)
     # print(binary_diffs)
-    # print(f"binary_diffs {binary_diffs}")
+    print(f"binary_diffs {binary_diffs}")
     signature_generator = Generator.from_binary(vuln_path, patch_path)
     sigs = {}
 

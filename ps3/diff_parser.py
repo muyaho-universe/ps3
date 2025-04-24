@@ -187,68 +187,53 @@ class DiffParser:
                     hunk: Hunk = hunk
                     temp_add = []
                     temp_remove = []
-
                     normalized_removes = []
                     normalized_adds = []
 
-                    removed_lines = len(
-                        list(filter(lambda x: x.is_removed, hunk.source_lines())))
-                    added_lines = len(
-                        list(filter(lambda x: x.is_added, hunk.target_lines())))
-                    # print(f"removed_lines: {removed_lines}, added_lines: {added_lines}")
-                    for line in hunk.source_lines():
-                        # print(f"line in source: {line}, {line.is_removed}")
+                    source_lines = list(hunk.source_lines())
+                    target_lines = list(hunk.target_lines())
+
+                    # 미리 normalize 해서 비교용 셋 만들기
+                    norm_src_map = {normalize_code_line(line.value): line.source_line_no
+                                    for line in source_lines if line.is_removed}
+                    norm_tgt_map = {normalize_code_line(line.value): line.target_line_no
+                                    for line in target_lines if line.is_added}
+                    common_keys = set(norm_src_map.keys()) & set(norm_tgt_map.keys())
+
+                    for line in source_lines:
                         if line.is_removed:
-                            temp_remove.append(line.value)
                             norm = normalize_code_line(line.value)
+                            if norm in common_keys:
+                                # print(f"[SKIP] source line matched in both: {repr(norm)}")
+                                continue
+                            temp_remove.append(line.value)
                             normalized_removes.append(norm)
-                            binary_lines = vuln_parser.line2addr(
-                                funcname, line.source_line_no)
-                            # print binary_lines
-                            # print(f"binary_lines: {binary_lines}")
+                            binary_lines = vuln_parser.line2addr(funcname, line.source_line_no)
                             if len(binary_lines) == 0:
                                 continue
                             pattern = self._decidepattern(line.value)
                             if pattern is not None:
                                 remove_pattern.extend(pattern)
                             remove.extend(binary_lines)
-                            # print(line, line.source_line_no, line.target_line_no, binary_lines)
-                    for line in hunk.target_lines():
-                        # print(f"line in target: {line}, {line.is_added}")
+
+                    for line in target_lines:
                         if line.is_added:
-                            temp_add.append(line.value)
                             norm = normalize_code_line(line.value)
+                            if norm in common_keys:
+                                # print(f"[SKIP] target line matched in both: {repr(norm)}")
+                                continue
+                            temp_add.append(line.value)
                             normalized_adds.append(norm)
-                            # print(f"temp_add: {temp_add}, lineno: {line.target_line_no}")
-                            binary_lines = patch_parser.line2addr(
-                                funcname, line.target_line_no)
+                            binary_lines = patch_parser.line2addr(funcname, line.target_line_no)
                             if len(binary_lines) == 0:
                                 continue
                             pattern = self._decidepattern(line.value)
                             if pattern is not None:
                                 add_pattern.extend(pattern)
                             add.extend(binary_lines)
-                            # print(line, line.source_line_no, line.target_line_no, binary_lines)
-                    pairs = list(zip(normalized_removes, normalized_adds))
-                    for norm_rm, norm_add in pairs:
-                        if norm_rm == norm_add:
-                            # temp_*에는 raw line이, remove/add에는 바이너리 주소가 있음
-                            try:
-                                idx_r = normalized_removes.index(norm_rm)
-                                temp_remove.pop(idx_r)
-                                remove.pop(idx_r)
-                                remove_pattern = remove_pattern[:idx_r] + remove_pattern[idx_r+1:]
-                            except:
-                                pass
-                            try:
-                                idx_a = normalized_adds.index(norm_add)
-                                temp_add.pop(idx_a)
-                                add.pop(idx_a)
-                                add_pattern = add_pattern[:idx_a] + add_pattern[idx_a+1:]
-                            except:
-                                pass
-                            
+
                     if len(add) == 0 and len(remove) == 0:
+                        # print(f"[INFO] Skipping hunk in {funcname}: no meaningful binary diff remains")
                         continue
 
                     # consider big pattern e.g. whole IF statement
@@ -260,23 +245,22 @@ class DiffParser:
                         remove_pattern.append(bigpatternremove)
 
                     if len(add) == 0:
-                        hunks.append(HunkDiff(add, remove, 'remove',
-                                              hunk, None, Patterns(remove_pattern)))
+                        hunks.append(HunkDiff(add, remove, 'remove', hunk, None, Patterns(remove_pattern)))
                     elif len(remove) == 0:
-                        hunks.append(HunkDiff(add, remove, 'add',
-                                              hunk, Patterns(add_pattern), None))
+                        hunks.append(HunkDiff(add, remove, 'add', hunk, Patterns(add_pattern), None))
                     else:
-                        hunks.append(HunkDiff(add, remove, 'modify', hunk, Patterns(
-                            add_pattern), Patterns(remove_pattern)))
+                        hunks.append(HunkDiff(add, remove, 'modify', hunk, Patterns(add_pattern), Patterns(remove_pattern)))
+
                 result.append(DiffResult(funcname, hunks))
         return result
     
 def normalize_code_line(line: str) -> str:
+    import re
     # 주석 제거
     line = line.split("//")[0]
-    # 양 끝 공백 제거, 중복 공백 제거
-    import re
-    line = re.sub(r'\s+', ' ', line.strip())
-    # 중괄호는 공백으로 처리해서 단순한 형식 변화는 무시
+    # 중괄호 제거
     line = line.replace("{", "").replace("}", "")
-    return line
+    # 모든 공백 문자 (탭, 스페이스 등) → 하나의 스페이스로
+    line = re.sub(r'\s+', ' ', line)
+    # 양쪽 공백 제거
+    return line.strip()

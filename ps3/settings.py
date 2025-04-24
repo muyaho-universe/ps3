@@ -8,8 +8,8 @@ DATASET_PATH = os.path.join(ROOT_PATH, 'dataset') # dataset path
 # BINARY_PATH = os.path.join(DATASET_PATH, 'ps3_original_binary')
 # BINARY_PATH = os.path.join(HDD_PATH, 'binary')
 
-DIFF_PATH= os.path.join(HDD_PATH, 'diff')
-# DIFF_PATH= os.path.join(DATASET_PATH, 'original_diff')
+# DIFF_PATH= os.path.join(HDD_PATH, 'diff')
+DIFF_PATH= os.path.join(HDD_PATH, 'original_diff')
 # TEST_FILE= os.path.join(DATASET_PATH, 'test.jsonl')
 # TEST_FILE= os.path.join(DATASET_PATH, 'overlapped_test.jsonl')
 # TEST_FILE= os.path.join(DATASET_PATH, 'overlapped_original_test.jsonl')
@@ -30,8 +30,9 @@ DIFF_PATH= os.path.join(HDD_PATH, 'diff')
 
 # FFmpeg
 # TEST_FILE= os.path.join(HDD_PATH, 'test_FFmpeg_new.jsonl')
-# BINARY_PATH = os.path.join(HDD_PATH, 'binary')
-# LOG_PATH = os.path.join(ROOT_PATH, "ps3",'log_FFmpeg.txt')
+TEST_FILE= os.path.join(HDD_PATH, 'test_FFmpeg.jsonl')
+BINARY_PATH = os.path.join(HDD_PATH, 'ps3_original_binary')
+LOG_PATH = os.path.join(ROOT_PATH, "ps3",'log_FFmpeg.txt')
 
 # tcpdump
 # TEST_FILE= os.path.join(HDD_PATH, 'test_tcpdump_new.jsonl')
@@ -43,9 +44,10 @@ DIFF_PATH= os.path.join(HDD_PATH, 'diff')
 # BINARY_PATH = os.path.join(HDD_PATH, 'binary')
 # LOG_PATH = os.path.join(ROOT_PATH, "ps3", 'log_openssl_new.txt')
 
-TEST_FILE= os.path.join(HDD_PATH, 'test_dwg2dxf.jsonl')
-BINARY_PATH = os.path.join(HDD_PATH, 'test')
-LOG_PATH = os.path.join(ROOT_PATH, "ps3", 'log_dwg2dxf.txt')
+# dwg2dxf
+# TEST_FILE= os.path.join(HDD_PATH, 'test_dwg2dxf.jsonl')
+# BINARY_PATH = os.path.join(HDD_PATH, 'test')
+# LOG_PATH = os.path.join(ROOT_PATH, "ps3", 'log_dwg2dxf.txt')
 
 
 

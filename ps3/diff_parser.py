@@ -63,6 +63,9 @@ class DiffParser:
     #                 continue
     #             return token[1]
     #     return None
+
+    # Improve the _get_function_name function
+    # now whitespace is not considered
     def _get_function_name(self, section_header: str) -> str:
         tokens = list(self.lexer.get_tokens(section_header))
         deep = 0
@@ -184,6 +187,10 @@ class DiffParser:
                     hunk: Hunk = hunk
                     temp_add = []
                     temp_remove = []
+
+                    normalized_removes = []
+                    normalized_adds = []
+
                     removed_lines = len(
                         list(filter(lambda x: x.is_removed, hunk.source_lines())))
                     added_lines = len(
@@ -193,11 +200,12 @@ class DiffParser:
                         # print(f"line in source: {line}, {line.is_removed}")
                         if line.is_removed:
                             temp_remove.append(line.value)
-                            # print(f"temp_remove: {temp_remove}, lineno: {line.source_line_no}")
+                            norm = normalize_code_line(line.value)
+                            normalized_removes.append(norm)
                             binary_lines = vuln_parser.line2addr(
                                 funcname, line.source_line_no)
                             # print binary_lines
-                            print(f"binary_lines: {binary_lines}")
+                            # print(f"binary_lines: {binary_lines}")
                             if len(binary_lines) == 0:
                                 continue
                             pattern = self._decidepattern(line.value)
@@ -209,6 +217,8 @@ class DiffParser:
                         # print(f"line in target: {line}, {line.is_added}")
                         if line.is_added:
                             temp_add.append(line.value)
+                            norm = normalize_code_line(line.value)
+                            normalized_adds.append(norm)
                             # print(f"temp_add: {temp_add}, lineno: {line.target_line_no}")
                             binary_lines = patch_parser.line2addr(
                                 funcname, line.target_line_no)
@@ -219,6 +229,25 @@ class DiffParser:
                                 add_pattern.extend(pattern)
                             add.extend(binary_lines)
                             # print(line, line.source_line_no, line.target_line_no, binary_lines)
+                    pairs = list(zip(normalized_removes, normalized_adds))
+                    for norm_rm, norm_add in pairs:
+                        if norm_rm == norm_add:
+                            # temp_*에는 raw line이, remove/add에는 바이너리 주소가 있음
+                            try:
+                                idx_r = normalized_removes.index(norm_rm)
+                                temp_remove.pop(idx_r)
+                                remove.pop(idx_r)
+                                remove_pattern = remove_pattern[:idx_r] + remove_pattern[idx_r+1:]
+                            except:
+                                pass
+                            try:
+                                idx_a = normalized_adds.index(norm_add)
+                                temp_add.pop(idx_a)
+                                add.pop(idx_a)
+                                add_pattern = add_pattern[:idx_a] + add_pattern[idx_a+1:]
+                            except:
+                                pass
+                            
                     if len(add) == 0 and len(remove) == 0:
                         continue
 
@@ -241,3 +270,13 @@ class DiffParser:
                             add_pattern), Patterns(remove_pattern)))
                 result.append(DiffResult(funcname, hunks))
         return result
+    
+def normalize_code_line(line: str) -> str:
+    # 주석 제거
+    line = line.split("//")[0]
+    # 양 끝 공백 제거, 중복 공백 제거
+    import re
+    line = re.sub(r'\s+', ' ', line.strip())
+    # 중괄호는 공백으로 처리해서 단순한 형식 변화는 무시
+    line = line.replace("{", "").replace("}", "")
+    return line

@@ -42,7 +42,6 @@ def run_one(tests: list[TestJson]) -> list[TestResult]:
     debugparser2 = DebugParser2.from_binary(vuln_path, patch_path, funcnames)
     binary_diffs = diffparser.get_binarylevel_change(debugparser2)
     # print(binary_diffs)
-    print(f"binary_diffs {binary_diffs}")
     signature_generator = Generator.from_binary(vuln_path, patch_path)
     sigs = {}
 

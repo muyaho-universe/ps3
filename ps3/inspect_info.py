@@ -1,6 +1,5 @@
 from simplify import simplify, equal, show_equal
 
-
 class InspectInfo:
     def __init__(self, ins) -> None:
         self.ins = ins
@@ -17,8 +16,6 @@ class InspectInfo:
     def __repr__(self) -> str:
         return str(self)
 
-    # python set will compare hash value first, then compare __eq__
-    # so we need to make sure that two InspectInfo with same ins must have same hash value
     def __hash__(self) -> int:
         return hash(self.ins[0])
 
@@ -35,7 +32,7 @@ class InspectInfo:
                 print(self)
                 assert False, "Not implemented"
         return False
-    
+
     def show_eq(self, other):
         if isinstance(other, InspectInfo):
             if isinstance(self.ins, tuple) and isinstance(other.ins, tuple):
@@ -61,3 +58,14 @@ class InspectInfo:
                 print(self)
                 assert False, "Not implemented"
         return False
+
+    def refine(self, reference_list: list["InspectInfo"]):
+        """
+        Refine this InspectInfo by comparing with a reference list.
+        If semantically equal info exists in reference_list, return None.
+        Else, return self.
+        """
+        for ref in reference_list:
+            if self == ref:
+                return None
+        return self

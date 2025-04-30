@@ -198,6 +198,11 @@ class DiffParser:
                                     for line in source_lines if line.is_removed}
                     norm_tgt_map = {normalize_code_line(line.value): line.target_line_no
                                     for line in target_lines if line.is_added}
+                    # 옛날 방식
+                    # norm_src_map = {line.value: line.source_line_no
+                    #                 for line in source_lines if line.is_removed}
+                    # norm_tgt_map = {line.value: line.target_line_no
+                    #                 for line in target_lines if line.is_added}
                     common_keys = set(norm_src_map.keys()) & set(norm_tgt_map.keys())
 
                     for line in source_lines:

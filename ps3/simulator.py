@@ -167,6 +167,13 @@ class Simulator:
         # print(visit)
         return visit
 
+    # def _refine_inspect(self, collect: dict[int, dict]) -> dict[int, dict]:
+    #     for bb_addr, effects in collect.items():
+    #         for insn_addr, effect_list in effects.items():
+    #             refined = [e.refine(effect_list) for e in effect_list]
+    #             effects[insn_addr] = [e for e in refined if e is not None]
+    #     return collect
+
     def _reduce_addresses_by_basicblock(self, address: list[int]) -> set[int]:
         # print("in _reduce_addresses_by_basicblock")
         l = list(self.function.blocks)

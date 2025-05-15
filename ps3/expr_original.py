@@ -128,4 +128,3 @@ class CCall(Expression):
 
 class Const(Expression):
     pass
-

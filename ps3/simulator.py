@@ -7,7 +7,7 @@ import pyvex.stmt as ps
 import pyvex.expr as pe
 import stmt
 from env import Environment, Arg2RegNum
-from inspect_info import InspectInfo
+from inspect_info import InspectInfo, Effect
 from diff_parser import Patterns
 from symbol_value import WildCardSymbol
 import time
@@ -57,12 +57,10 @@ class State:
 
 class Simulator:
     def __init__(self, proj: angr.Project, symbol=None) -> None:
-        # print("in Simulator")
         self.proj = proj
         self.symbol = symbol
 
     def _init_function(self, funcname: str):
-        # print("in _init_function")
         symbol = self.proj.loader.find_symbol(funcname)
         if symbol is None:
             if self.symbol is not None:
@@ -167,13 +165,6 @@ class Simulator:
         # print(visit)
         return visit
 
-    # def _refine_inspect(self, collect: dict[int, dict]) -> dict[int, dict]:
-    #     for bb_addr, effects in collect.items():
-    #         for insn_addr, effect_list in effects.items():
-    #             refined = [e.refine(effect_list) for e in effect_list]
-    #             effects[insn_addr] = [e for e in refined if e is not None]
-    #     return collect
-
     def _reduce_addresses_by_basicblock(self, address: list[int]) -> set[int]:
         # print("in _reduce_addresses_by_basicblock")
         l = list(self.function.blocks)
@@ -241,7 +232,8 @@ class Simulator:
             if state.node.addr in visit:
                 continue
             # logger.debug(f"Now begin {hex(state.node.addr)}")
-            result = self._simulateBB(state, step_one=True)            
+            result = self._simulateBB(state, step_one=True)
+            # print(f"result: {result}")
             if isinstance(result, list):  # fork
                 visit.update(result[0].addrs)
                 trace.update(result[0].inspect)
@@ -299,7 +291,9 @@ class Simulator:
                         block[machine_addr].append(cond)
                     elif isinstance(cond, pe.IRExpr):  # guard it
                         block[machine_addr].append(
-                            InspectInfo(("Condition", cond))) 
+                            # InspectInfo(("Condition", cond)) 
+                            InspectInfo(Effect.Condition(cond))
+                        )
                     # logger.info(f"block2: {block}")                   
                 else:
                     cond = stmt.simulate(state.env)
@@ -349,7 +343,9 @@ class Simulator:
                                             args.append(
                                                 state.env.get_reg(Arg2RegNum[i]))
                                     info = InspectInfo(
-                                        ("Call", call_name, args))
+                                        # ("Call", call_name, args)
+                                        Effect.Call(call_name, args)
+                                    )
                                     block = state.inspect[basicblock_addr]
                                     if machine_addr not in block:
                                         block[machine_addr] = []
@@ -432,11 +428,15 @@ class Signature:
         conds = []
         others = []
         for site in reversed(collect_copy):
-            if site.ins[0] == "Condition":
-                string = str(site.ins[1])
+            # if site.ins[0] == "Condition":
+            if isinstance(site, Effect.Condition):
+                # string = str(site.ins[1])
+                string = str(site.expr)
                 conds.append(string)
-            elif site.ins[0] == "Store":
-                string = str(site.ins[2])
+            # elif site.ins[0] == "Store":
+            elif isinstance(site, Effect.Store):
+                # string = str(site.ins[2])
+                string = str(site.expr)
                 if string in others:
                     collect.remove(site)
                     continue
@@ -445,11 +445,15 @@ class Signature:
                         collect.remove(site)
                         break
                 others.append(string)
-            elif site.ins[0] == "Call":
-                for arg in site.ins[2]:
+            # elif site.ins[0] == "Call":
+            elif isinstance(site, Effect.Call):
+                # for arg in site.ins[2]:
+                for arg in site.args:
                     others.append(str(arg))
-            elif site.ins[0] == "Put":
-                string = str(site.ins[2])
+            # elif site.ins[0] == "Put":
+            elif isinstance(site, Effect.Put):
+                # string = str(site.ins[2])
+                string = str(site.expr)
                 # FakeRet with name, we cannot remove it
                 if "FakeRet" in string and len(string) > len("FakeRet()"):
                     continue
@@ -495,6 +499,7 @@ class Signature:
         # print("=========================================", type)
         logger.info(f"========================================= {type} signature")
         ser = self._serial(collect)
+        # print(f"ser: {ser}")
         for single_site in ser[0]:
             # print(single_site)
             logger.info(single_site)
@@ -703,17 +708,31 @@ class Test:
                 return "Call"
         return None
 
-    def _match2len(self, match: list) -> int:
+    # def _match2len(self, match: list) -> int:
+    #     l = 0
+    #     for m in match:
+    #         if m.ins[0] == "Put":
+    #             l += 1
+    #         elif m.ins[0] == "Store":
+    #             l += 1.5
+    #         elif m.ins[0] == "Condition" or m.ins[0] == "Call":
+    #             l += 2
+    #         else:
+    #             raise NotImplementedError(f"{m.ins[0]} is not considered.")
+    #     return l
+
+    def _match2len(self, match: list[InspectInfo]) -> int:
         l = 0
         for m in match:
-            if m.ins[0] == "Put":
+            ins = m.ins
+            if isinstance(ins, Effect.Put):
                 l += 1
-            elif m.ins[0] == "Store":
+            elif isinstance(ins, Effect.Store):
                 l += 1.5
-            elif m.ins[0] == "Condition" or m.ins[0] == "Call":
+            elif isinstance(ins, (Effect.Condition, Effect.Call)):
                 l += 2
             else:
-                raise NotImplementedError(f"{m.ins[0]} is not considered.")
+                raise NotImplementedError(f"{type(ins)} is not considered.")
         return l
 
     def test_func(self, funcname: str, simulator: Simulator, sigs: list[Signature]) -> str:
@@ -730,7 +749,6 @@ class Test:
             print(f"FunctionNotFound: {funcname}")
             return None
         result = []
-        # TODO: 여기 고쳐야됨
         # test one hunk's signature
         for sig in sigs:
             if sig.state == "vuln":
@@ -759,7 +777,8 @@ class Test:
             # logger.info(f"patch_effect: {patch_effect}")
             vuln_match, patch_match = [], []
             all_effects = extrace_effect(traces)
-            logger.info(f"all_effects: {set(all_effects)}")
+            # logger.info(f"all_effects: {set(all_effects)}")
+            logger.info(f"all_effects: {sorted(set(str(i) for i in all_effects))}")
             # for effect in all_effects:
             #     logger.info(f"effect: {effect}")
             test = False
@@ -771,7 +790,8 @@ class Test:
                 #     patch_effect = list(patch_effect)  # 리스트로 변환
                 #     patch = patch_effect[temp-i-1]
                 for patch in patch_effect:
-                    if (patch.ins[0] == "Condition" or patch.ins[0] == "Call") and patch not in all_effects:
+                    # if (patch.ins[0] == "Condition" or patch.ins[0] == "Call") and patch not in all_effects:
+                    if isinstance(patch.ins, (Effect.Condition, Effect.Call)) and patch not in all_effects:
                         test = True
                         result.append("vuln")
                         break
@@ -779,7 +799,8 @@ class Test:
             if len(patch_effect) == 0:
                 # logger.info("pure deletion")
                 for vuln in vuln_effect:
-                    if (vuln.ins[0] == "Condition" or vuln.ins[0] == "Call") and vuln not in all_effects:
+                    # if (vuln.ins[0] == "Condition" or vuln.ins[0] == "Call") and vuln not in all_effects:
+                    if isinstance(vuln.ins, (Effect.Condition, Effect.Call)) and vuln not in all_effects:
                         test = True
                         # logger.info(f"vuln {vuln} is not in all_effects")
                         result.append("patch")
@@ -802,13 +823,15 @@ class Test:
             
             # If the pattern is If, then we should check there at least one condition in matched effect
             if patch_use_pattern == "If":
-                patch_match = [
-                    i for i in patch_match if i.ins[0] == "Condition"]
+                # patch_match = [
+                #     i for i in patch_match if i.ins[0] == "Condition"]
+                patch_match = [i for i in patch_match if isinstance(i.ins, Effect.Condition)]
                 if len(patch_match) == 0:
                     result.append("vuln")
                     continue
             if vuln_use_pattern == "If":
-                vuln_match = [i for i in vuln_match if i.ins[0] == "Condition"]
+                # vuln_match = [i for i in vuln_match if i.ins[0] == "Condition"]
+                vuln_match = [i for i in vuln_match if isinstance(i.ins, Effect.Condition)]
                 if len(vuln_match) == 0:
                     result.append("patch")
                     continue

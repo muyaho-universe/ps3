@@ -3,7 +3,7 @@ import pyvex.stmt as ps
 from pyvex.expr import IRExpr
 from expr import reduce
 from env import Environment
-from inspect_info import InspectInfo
+from inspect_info import InspectInfo, Effect
 
 # A wrapper for pyvex.stmt
 class Statement: 
@@ -79,7 +79,8 @@ class Put(Statement):
             # if write to rip, then ignore it
             if self.stmt.offset != 184: 
                 # print("Put", self.stmt.offset, " data: ",data)
-                return InspectInfo(("Put", self.stmt.offset, data))
+                # return InspectInfo(("Put", self.stmt.offset, data))
+                return Effect.Put(self.stmt.offset, data)
 
 class PutI(Statement):
     def __init__(self, stmt: ps.PutI) -> None:
@@ -98,7 +99,8 @@ class Store(Statement):
         addr = reduce(self.stmt.addr, env)
         env.set_mem(addr, data)
         if inspect:
-            return InspectInfo(("Store", addr, data))
+            # return InspectInfo(("Store", addr, data))
+            return Effect.Store(addr, data)
 
 class StoreG(Statement):
     def __init__(self, stmt: ps.StoreG) -> None:

@@ -632,7 +632,8 @@ class Test:
             logger.info(f"{vuln_effect}, {patch_effect}")
             vuln_match, patch_match = [], []
             all_effects = extrace_effect(traces)
-            logger.info(f"{all_effects}")
+            # logger.info(f"{all_effects}")
+            logger.info(f"all_effects: {sorted(set(str(i) for i in all_effects))}")
             test = False
             # essential a add patch
             if len(vuln_effect) == 0:

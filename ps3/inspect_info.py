@@ -1,4 +1,5 @@
-from simplify import simplify, equal, show_equal
+# from simplify import simplify, equal, show_equal
+import simplify
 from effect import Effect
 
 class InspectInfo:
@@ -56,15 +57,15 @@ class InspectInfo:
         if not isinstance(__o, InspectInfo):
             return False
         if isinstance(self.ins, Effect.Call) and isinstance(__o.ins, Effect.Call):
-            return self.ins.name == __o.ins.name and all(equal(a, b) for a, b in zip(self.ins.args, __o.ins.args))
+            return self.ins.name == __o.ins.name and all(simplify.equal(a, b) for a, b in zip(self.ins.args, __o.ins.args))
         elif isinstance(self.ins, Effect.Condition) and isinstance(__o.ins, Effect.Condition):
-            return equal(self.ins.expr, __o.ins.expr)
+            return simplify.equal(self.ins.expr, __o.ins.expr)
         elif isinstance(self.ins, Effect.Return) and isinstance(__o.ins, Effect.Return):
-            return equal(self.ins.expr, __o.ins.expr)
+            return simplify.equal(self.ins.expr, __o.ins.expr)
         elif isinstance(self.ins, Effect.Put) and isinstance(__o.ins, Effect.Put):
-            return self.ins.reg == __o.ins.reg and equal(self.ins.expr, __o.ins.expr)
+            return self.ins.reg == __o.ins.reg and simplify.equal(self.ins.expr, __o.ins.expr)
         elif isinstance(self.ins, Effect.Store) and isinstance(__o.ins, Effect.Store):
-            return equal(self.ins.addr, __o.ins.addr) and equal(self.ins.expr, __o.ins.expr)
+            return simplify.equal(self.ins.addr, __o.ins.addr) and simplify.equal(self.ins.expr, __o.ins.expr)
         else:
             return False
 
@@ -103,16 +104,16 @@ class InspectInfo:
         print(f"other.ins: {other.ins}")
         if isinstance(self.ins, Effect.Call) and isinstance(other.ins, Effect.Call):
             print(f"self name: {self.ins.name}, other name: {other.ins.name}")
-            print(f"args equal: {[show_equal(a, b) for a, b in zip(self.ins.args, other.ins.args)]}")
+            print(f"args equal: {[simplify.show_equal(a, b) for a, b in zip(self.ins.args, other.ins.args)]}")
         elif isinstance(self.ins, Effect.Condition) and isinstance(other.ins, Effect.Condition):
-            print(f"Condition show equal: {show_equal(self.ins.expr, other.ins.expr)}")
+            print(f"Condition show equal: {simplify.show_equal(self.ins.expr, other.ins.expr)}")
         elif isinstance(self.ins, Effect.Return) and isinstance(other.ins, Effect.Return):
-            print(f"Return show equal: {show_equal(self.ins.expr, other.ins.expr)}")
+            print(f"Return show equal: {simplify.show_equal(self.ins.expr, other.ins.expr)}")
         elif isinstance(self.ins, Effect.Put) and isinstance(other.ins, Effect.Put):
-            print(f"Put show equal: {show_equal(self.ins.expr, other.ins.expr)}")
+            print(f"Put show equal: {simplify.show_equal(self.ins.expr, other.ins.expr)}")
         elif isinstance(self.ins, Effect.Store) and isinstance(other.ins, Effect.Store):
-            print(f"Store addr show equal: {show_equal(self.ins.addr, other.ins.addr)}")
-            print(f"Store expr show equal: {show_equal(self.ins.expr, other.ins.expr)}")
+            print(f"Store addr show equal: {simplify.show_equal(self.ins.addr, other.ins.addr)}")
+            print(f"Store expr show equal: {simplify.show_equal(self.ins.expr, other.ins.expr)}")
         else:
             print(f"Different types or unsupported Effect: {type(self.ins)}, {type(other.ins)}")
         return self == other

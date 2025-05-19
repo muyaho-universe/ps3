@@ -80,7 +80,7 @@ class Put(Statement):
             if self.stmt.offset != 184: 
                 # print("Put", self.stmt.offset, " data: ",data)
                 # return InspectInfo(("Put", self.stmt.offset, data))
-                return Effect.Put(self.stmt.offset, data)
+                return InspectInfo(Effect.Put(self.stmt.offset, data))
 
 class PutI(Statement):
     def __init__(self, stmt: ps.PutI) -> None:
@@ -100,7 +100,7 @@ class Store(Statement):
         env.set_mem(addr, data)
         if inspect:
             # return InspectInfo(("Store", addr, data))
-            return Effect.Store(addr, data)
+            return InspectInfo(Effect.Store(addr, data))
 
 class StoreG(Statement):
     def __init__(self, stmt: ps.StoreG) -> None:

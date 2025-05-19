@@ -4,6 +4,10 @@ from debug_parser import DebugParser2
 from diff_parser import DiffParser
 from simulator import Generator, Signature, Test, valid_sig
 # from original_simulator import Generator, Signature, Test, valid_sig
+from inspect_info import InspectInfo
+from effect import Effect
+from pyvex.expr import IRExpr, Binop, Const, Unop
+from symbol_value import AnySymbol, RegSymbol, ReturnSymbol, MemSymbol
 from log import *
 from settings import *
 
@@ -18,46 +22,6 @@ TEST_NUM = -1
 min_time = 99999999
 max_time = 0
 max_project = ""
-
-def refine_each_effect(collect):
-    for bb in collect.keys():
-        for addr in collect[bb].keys():
-            if addr == "Constraints":
-                continue
-            refined = []
-            for site in collect[bb][addr]:
-                r = site.refine([])  # 여기서는 Any → 구체화 (removed_effects 없이도 self refine)
-                if r is not None:
-                    refined.append(r)
-            collect[bb][addr] = refined
-    return collect
-
-def refine_cross(patch_collect, vuln_collect):
-    # patch의 effect가 vuln과 의미가 같으면 제거
-    for bb in patch_collect.keys():
-        for addr in patch_collect[bb].keys():
-            if addr == "Constraints":
-                continue
-            refined = []
-            for site in patch_collect[bb][addr]:
-                remove = False
-                for bb_v in vuln_collect.keys():
-                    for addr_v in vuln_collect[bb_v].keys():
-                        if addr_v == "Constraints":
-                            continue
-                        for site_v in vuln_collect[bb_v][addr_v]:
-                            # 여기도 의미 동등 비교는 site == site_v가 아니라 site.refine([site_v]) == None 인지 체크 가능
-                            if site.refine([site_v]) is None:
-                                remove = True
-                                break
-                        if remove:
-                            break
-                    if remove:
-                        break
-                if not remove:
-                    refined.append(site)
-            patch_collect[bb][addr] = refined
-    return patch_collect
 
 
 def run_one(tests: list[TestJson]) -> list[TestResult]:
@@ -113,16 +77,18 @@ def run_one(tests: list[TestJson]) -> list[TestResult]:
                     funcname, hunk.add, "patch", hunk.add_pattern)
                 collect_vuln = signature_generator.generate(
                     funcname, hunk.remove, "vuln", hunk.remove_pattern)
-                print(f"before refine collect_patch: {collect_patch}")
-                print(f"before refine collect_vuln: {collect_vuln}")
+            
+
+                # print(f"before refine collect_patch: {collect_patch}")
+                # print(f"before refine collect_vuln: {collect_vuln}")
                 if collect_patch is None and collect_vuln is None:
                     continue
-                if collect_patch is not None and collect_vuln is not None:
-                    collect_patch = refine_cross(collect_patch, collect_vuln)
-                    collect_vuln = refine_cross(collect_vuln, collect_patch)
-                print(f"after refine collect_patch: {collect_patch}")
-                print(f"after refine collect_vuln: {collect_vuln}")
-                exit(0)
+                # print(f"type_collect_patch: {type(collect_patch)}")
+                # traverse_collect(collect_patch)
+                
+                # print(f"after refine collect_patch: {collect_patch}")
+                # print(f"after refine collect_vuln: {collect_vuln}")
+                # exit(0)
                 signature = Signature.from_modify(
                     collect_vuln, collect_patch, funcname, hunk.add_pattern, hunk.remove_pattern)
                 sigs[funcname].append(signature)
@@ -142,6 +108,7 @@ def run_one(tests: list[TestJson]) -> list[TestResult]:
             sigs[funcname] = valid_sig(sig)
         for s in sigs[funcname]:
             s.show()
+    
     testor = Test(sigs)
     if TEST_NUM >= 0:  # test specific number of tests
         if TEST_NUM == 0:

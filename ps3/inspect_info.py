@@ -17,16 +17,16 @@ class InspectInfo:
 
     def __str__(self) -> str:
         if isinstance(self.ins, Effect.Call):
-            simplified_args = [simplify(arg) for arg in self.ins.args]
+            simplified_args = [simplify.simplify(arg) for arg in self.ins.args]
             return f"Call: {self.ins.name}({', '.join(map(str, simplified_args))})"
         elif isinstance(self.ins, Effect.Condition):
-            return f"Condition: {simplify(self.ins.expr)}"
+            return f"Condition: {simplify.simplify(self.ins.expr)}"
         elif isinstance(self.ins, Effect.Return):
-            return f"Return: {simplify(self.ins.expr)}"
+            return f"Return: {simplify.simplify(self.ins.expr)}"
         elif isinstance(self.ins, Effect.Put):
-            return f"Put: {self.ins.reg} = {simplify(self.ins.expr)}"
+            return f"Put: {self.ins.reg} = {simplify.simplify(self.ins.expr)}"
         elif isinstance(self.ins, Effect.Store):
-            return f"Store: {simplify(self.ins.addr)} = {simplify(self.ins.expr)}"
+            return f"Store: {simplify.simplify(self.ins.addr)} = {simplify.simplify(self.ins.expr)}"
         else:
             return str(self.ins)
 
@@ -128,3 +128,6 @@ class InspectInfo:
             if self == ref:
                 return None
         return self
+    
+    # def __str__(self):
+    #     return str(self.ins)

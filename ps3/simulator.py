@@ -13,6 +13,7 @@ from symbol_value import WildCardSymbol
 import time
 import lief
 from settings import *
+from refinement import refine_sig
 
 
 class FunctionNotFound(Exception):
@@ -404,6 +405,7 @@ class Signature:
         self.funcname = funcname
         self.state = state
         self.patterns = patterns
+        self.sig_dict = {"add": [], "remove": []}
 
     @classmethod
     def from_add(cls, collect: dict, funcname: str, state: str, patterns) -> "Signature":
@@ -760,9 +762,26 @@ class Test:
                 patch_effect, _ = sig.serial()
                 vuln_pattern, patch_pattern = Patterns([]), sig.patterns
             elif sig.state == "modify":
-                vuln_info, patch_info = sig.serial()
-                vuln_effect, _ = vuln_info
-                patch_effect, _ = patch_info
+                if sig.sig_dict["add"] == [] and sig.sig_dict["remove"] == []:
+                    vuln_info, patch_info = sig.serial()
+                    vuln_effect, _ = vuln_info
+                    patch_effect, _ = patch_info
+                    
+                    vuln_effect = set(vuln_effect)
+                    patch_effect = set(patch_effect)
+                    
+                    vuln_effect, patch_effect = vuln_effect-patch_effect, patch_effect-vuln_effect
+                    vuln_effect = list(vuln_effect)
+                    patch_effect = list(patch_effect)
+                    
+                    # TODO: 여기서 refinement
+                    vuln_effect, patch_effect = refine_sig(vuln_effect, patch_effect)
+
+                    sig.sig_dict["add"] = patch_effect
+                    sig.sig_dict["remove"] = vuln_effect
+                else:
+                    vuln_effect, patch_effect = sig.sig_dict["remove"], sig.sig_dict["add"]
+
                 vuln_pattern, patch_pattern = sig.patterns[0], sig.patterns[1]
             else:
                 raise NotImplementedError(f"{sig.state} is not considered.")
@@ -770,7 +789,9 @@ class Test:
                 vuln_pattern), self.use_pattern(patch_pattern)
             vuln_effect = set(vuln_effect)
             patch_effect = set(patch_effect)
+            
             vuln_effect, patch_effect = vuln_effect-patch_effect, patch_effect-vuln_effect
+            
             if len(vuln_effect) == 0 and len(patch_effect) == 0:
                 continue
             # logger.info(f"vuln_effect: {vuln_effect}")

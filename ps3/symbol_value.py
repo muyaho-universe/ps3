@@ -78,3 +78,16 @@ class ReturnSymbol(SymbolicValue):
                 return self.name == other.name
             return False
         return False
+
+class AnySymbol(SymbolicValue):
+    def __init__(self) -> None:
+        self._value = 0
+    
+    def __str__(self) -> str:
+        return "T"
+    
+    def __repr__(self) -> str:
+        return "Any"
+    
+    def __eq__(self, other):
+        return True

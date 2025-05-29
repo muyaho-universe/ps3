@@ -7,6 +7,7 @@ from typing import Iterator
 from copy import deepcopy
 from simplify import simplify
 from node import Node
+from itertools import product
 
 # def possible_subs(expr) -> Iterator[IRExpr | SymbolicValue]:
 #     # print(f"[possible_subs] Generating substitutions type {type(expr)}")
@@ -86,93 +87,62 @@ from node import Node
 #         print(f"[possible_subs] Unknown expr type: {type(expr)}")
 #         exit(1)
 
-def tree_possible_subs(node: Node) -> Iterator[Node]:
-    if not node.children:
-        # 리프 노드는 자신과 AnySymbol 두 가지
-        yield Node("AnySymbol", level=node.level)
-        yield deepcopy(node)
-        return
+def tree_possible_subs(tree: Node, fallback_effect: Effect) -> Iterator[Effect]:
+    # 각 노드에서 가능한 대체 표현을 재귀적으로 생성
+    def helper(node: Node) -> list[Node]:
+        # 자식이 없는 리프 노드인 경우: 자신 그대로, 그리고 T로 대체
+        if not node.children:
+            return [deepcopy(node), Node("Const: T", level=node.level)]
 
-    # 자식들을 전부 재귀적으로 대체해봄
-    for i, child in enumerate(node.children):
-        for sub_child in tree_possible_subs(child):
-            new_children = deepcopy(node.children)
-            new_children[i] = sub_child
-            yield Node(node.label, new_children, level=node.level)
+        # 자식이 있는 경우: 각 자식에서 가능한 노드 조합 생성
+        children_sub_lists = [helper(child) for child in node.children]
+        combinations = product(*children_sub_lists)
 
-    # 자기 자신도 항상 포함
-    yield deepcopy(node)
+        result = []
+
+        for comb in combinations:
+            new_node = Node(node.label, list(comb), level=node.level)
+            result.append(new_node)
+
+        # 자기 자신도 T로 바꾸는 경우 추가
+        if node.level >= 1:  # level 0은 effect root이므로 제외
+            result.append(Node("Const: T", level=node.level))
+
+        return result
+
+    # 전체 트리에서 가능한 대체 트리 생성
+    candidates = helper(tree)
+
+    # 각 트리를 effect로 변환 (불가능한 경우 fallback 사용)
+    for cand in candidates:
+        try:
+            yield node_to_effect(cand, fallback_effect=fallback_effect)
+        except Exception:
+            continue
         
 def refine_one(myself: list[InspectInfo], other: list[InspectInfo]) -> list[InspectInfo]:
     result = []
     for i, info in enumerate(myself):
         effect = deepcopy(info.ins) 
         temp = []
-        
-        if isinstance(effect, Effect.Call):
-            args = deepcopy(effect.args)
-            any_args = [AnySymbol() for _ in args]
-            new_call = InspectInfo(Effect.Call(effect.name, any_args))
-            temp.append(new_call)
-            # if new_call not in other:
-                #     myself[i] = new_call
-                #     break
-            for j, arg in enumerate(args):
-                # print(f"==========> {j}th arg: {arg} <==========")
-                for sub in tree_possible_subs(arg):
-                    # new_call = InspectInfo(Effect.Call(effect.name, args[:j] + [sub] + args[j+1:]))
-                    # print(f"str(sub): {str(sub)}")
-                    temp.append(sub)
-                    # if new_call not in other:
-                    #     myself[i] = new_call
-                    #     break
-            
-        elif isinstance(effect, Effect.Condition):
-            # if InspectInfo(Effect.Condition(AnySymbol())) not in other:
-            #     new_condition = InspectInfo(Effect.Condition(AnySymbol()))
-            #     temp.append(new_condition)
-            # else:   
-            for sub in tree_possible_subs(effect.expr):
-                sub_effect = node_to_effect(sub)
-                new_condition = InspectInfo(Effect.Condition(sub))
-                temp.append(new_condition)
-                # if new_condition not in other:
-                #     myself[i] = new_condition
-                #     break
-        elif isinstance(effect, Effect.Return):
-            for sub in tree_possible_subs(effect.expr):
+        root = effect_to_node(info.ins)
+        for generalized_tree in tree_possible_subs(root, fallback_effect=effect):
+            # print(f"generated: {generated}")
+            # print(f"generated.label: {generated.label}")
+            # print(f"generated.children: {generated.children}")
+            # print(f"generated.level: {generated.level}")
+            # print(f"node_to_effect(generated): {node_to_effect(generated)}")
                 
-                new_return = InspectInfo(Effect.Return(sub))
-                
-                temp.append(new_return)
-                # if new_return not in other:
-                #     myself[i] = new_return
-                #     break
+            try:
+                new_effect = generalized_tree
+            except ValueError as e:
+                print(f"Error converting node to effect: {e}, node: {generalized_tree.print()}")
+                exit(1)
+            new_info = InspectInfo(new_effect)
+            # if new_info not in other:
+            temp.append(new_info)
 
-        elif isinstance(effect, Effect.Put):
-            for sub in tree_possible_subs(effect.expr):
-                # print(f"str(sub): {str(sub)}")
-                if "T,T" in str(sub):
-                    continue 
-                new_put = InspectInfo(Effect.Put(effect.reg, sub))
-                # if str(new_put) not in temp:
-                # temp.append(new_put)
-                # if new_put not in other:
-                #     myself[i] = new_put
-                #     break
-        elif isinstance(effect, Effect.Store):
-            for addr_sub in tree_possible_subs(effect.addr):
-                for expr_sub in tree_possible_subs(effect.expr):
-                    new_store = InspectInfo(Effect.Store(addr_sub, expr_sub))
-                    temp.append(new_store)
-                    # if new_store not in other:
-                    #     myself[i] = new_store
-                    #     break
-        else:
-            print(f"Unknown effect type: {type(effect)}")
-            # exit(1)
-            # raise ValueError(f"Unknown Effect type: {type(effect)}")
-        # result.append(temp)
+        result.append(temp)
     return result 
 
 
@@ -183,21 +153,20 @@ def refine_sig(vuln_effect: list[InspectInfo], patch_effect: list[InspectInfo]) 
     vuln_effect = simplify_effects(vuln_effect)
     patch_effect = simplify_effects(patch_effect)
     temp = []
-    print(f"vuln_effect: {vuln_effect}")
-    for i in range(len(vuln_effect)):
-        # if isinstance(vuln_effect[i].ins, Effect.Call):     
-        tree = effect_to_node(vuln_effect[i].ins)
-        tree.print()
+    # for i in range(len(vuln_effect)):
+    #     # if isinstance(vuln_effect[i].ins, Effect.Call):     
+    #     tree = effect_to_node(vuln_effect[i].ins)
+    #     tree.print()
         
-        restored = node_to_effect(tree)
-        print(f"restored: {InspectInfo(restored)}")
-        temp.append(InspectInfo(restored))
-        print("=" * 50)
-    print(f"old == restored: {old_vuln_effect == temp}")
-    # vuln_effect = refine_one(vuln_effect, patch_effect)
+    #     restored = node_to_effect(tree)
+    #     print(f"restored: {InspectInfo(restored)}")
+    #     temp.append(InspectInfo(restored))
+    #     print("=" * 50)
+    # print(f"old == restored: {old_vuln_effect == temp}")
+    vuln_effect = refine_one(vuln_effect, patch_effect)
     # patch_effect = refine_one(patch_effect, vuln_effect)
-    # print(f"old_vuln_effect: {old_vuln_effect}")
-    # print(f"vuln_effect: {vuln_effect}")
+    print(f"old_vuln_effect: {old_vuln_effect}")
+    print(f"vuln_effect: {vuln_effect}")
 
     # for i in (0, 1):
     #     if isinstance(vuln_effect[i][0].ins, Effect.Put):
@@ -381,13 +350,20 @@ def node_to_expr(node: Node):
         raise ValueError(f"Unknown node label: {node.label}")
     
 
-def node_to_effect(node: Node) -> Effect:
+def node_to_effect(node: Node, fallback_effect: Effect = None) -> Effect:
     label = node.label
 
     if label.startswith("Call("):
         name = label[len("Call("):-1]
+
+        if not node.children or node.children[0].label != "args_top":
+            # fallback 상황: generalized_tree가 "Const: T" 하나로만 구성된 경우 등
+            if fallback_effect is not None:
+                return Effect.Call(fallback_effect.name, [AnySymbol()] * len(fallback_effect.args))
+            else:
+                raise ValueError("Malformed Call node and no fallback provided")
+
         args_top = node.children[0]
-        assert args_top.label == "args_top", "Expected args_top under Call"
         args = [node_to_expr(child) for child in args_top.children]
         return Effect.Call(name, args)
 
@@ -411,6 +387,22 @@ def node_to_effect(node: Node) -> Effect:
         addr = node_to_expr(addr_node.children[0])
         expr = node_to_expr(expr_node.children[0])
         return Effect.Store(addr, expr)
+
+    elif label == "Const: T" and fallback_effect is not None:
+        # Fallback: wrap generalized expr into original effect
+        if isinstance(fallback_effect, Effect.Call):
+            args = [AnySymbol()] * len(fallback_effect.args)
+            return Effect.Call(fallback_effect.name, args)
+        elif isinstance(fallback_effect, Effect.Put):
+            return Effect.Put(fallback_effect.reg, AnySymbol())
+        elif isinstance(fallback_effect, Effect.Condition):
+            return Effect.Condition(AnySymbol())
+        elif isinstance(fallback_effect, Effect.Return):
+            return Effect.Return(AnySymbol())
+        elif isinstance(fallback_effect, Effect.Store):
+            return Effect.Store(AnySymbol(), AnySymbol())
+        else:
+            raise ValueError(f"Fallback not supported for: {type(fallback_effect)}")
 
     else:
         raise ValueError(f"Unknown effect node: {label}")

@@ -1,6 +1,6 @@
 import pyvex.expr as pe
 import pyvex.const as pc
-from symbol_value import RegSymbol, ReturnSymbol, MemSymbol
+from symbol_value import RegSymbol, ReturnSymbol, MemSymbol, AnySymbol
 import z3
 
 mapfunction = z3.Function("Mem", z3.BitVecSort(64), z3.BitVecSort(64))
@@ -15,6 +15,15 @@ def simplify(expr: pe.IRExpr):
 
 
 def equal(expr1: pe.IRExpr, expr2: pe.IRExpr) -> bool:
+    if isinstance(expr1, AnySymbol) or isinstance(expr2, AnySymbol):
+        # If either is AnySymbol, we consider them equal
+        return True
+    # print(f"Comparing: {simplify(expr1)} and {simplify(expr2)}")
+    if "T" in str(simplify(expr1)).split("*")[-1]:
+        return True
+    # if str(simplify(expr2)) == "T":
+    if "T" in str(simplify(expr2)).split("*")[-1]:
+        return True
     if isinstance(expr1, int) or isinstance(expr1, str):
         return expr1 == expr2
     if isinstance(expr1, list):
@@ -52,11 +61,13 @@ def to_z3(expr):
     try:
         return to_z3_true(expr)
     except Exception as e:
-        print(f"Error converting {expr}: {e}")
+        print(f"Error converting {expr}:{type(expr)} : {e}")
         return z3.BitVecVal(0, 64)
 
 
 def to_z3_true(expr: pe.IRExpr | pc.IRConst | int) -> z3.ExprRef:
+    if isinstance(expr, AnySymbol):
+        return z3.BitVec("T", 64)
     if isinstance(expr, int):
         return z3.BitVecVal(expr, 64)
     if isinstance(expr, pc.IRConst):
@@ -71,6 +82,8 @@ def to_z3_true(expr: pe.IRExpr | pc.IRConst | int) -> z3.ExprRef:
     if isinstance(expr, pe.Const):
         return to_z3(expr.con)
     if isinstance(expr, pe.Unop):
+        if isinstance(expr.args[0], AnySymbol):
+            return z3.BitVec("T", 64)
         if expr.op.find("to") != -1:
             if expr.op == "Iop_1Uto64":  # 1U means bool
                 return z3.If(to_z3(expr.args[0]), z3.BitVecVal(0, 64), z3.BitVecVal(1, 64))
@@ -170,20 +183,48 @@ def to_z3_true(expr: pe.IRExpr | pc.IRConst | int) -> z3.ExprRef:
 def simplify_z3(expr):
     return z3.simplify(expr)
 
+# def equal_z3(expr1, expr2):
+#     expr1_simplify = simplify_z3(expr1)
+#     expr2_simplify = simplify_z3(expr2)
+#     result = z3.eq(expr1_simplify, expr2_simplify)
+#     if result:
+#         return True
+#     else:
+#         # use prove to check if the two expr are equal semanticly
+#         if 'If' in str(expr1_simplify) and 'If' in str(expr2_simplify):
+#             try:
+#                 return prove(expr1_simplify == expr2_simplify)
+#             except Exception:
+#                 return False
+#         return False
+
 def equal_z3(expr1, expr2):
     expr1_simplify = simplify_z3(expr1)
     expr2_simplify = simplify_z3(expr2)
-    result = z3.eq(expr1_simplify, expr2_simplify)
-    if result:
+
+    # fast path
+    if expr1_simplify.eq(expr2_simplify):
         return True
-    else:
-        # use prove to check if the two expr are equal semanticly
-        if 'If' in str(expr1_simplify) and 'If' in str(expr2_simplify):
-            try:
-                return prove(expr1_simplify == expr2_simplify)
-            except Exception:
-                return False
+
+    # check if 'T' appears
+    vars1 = set(z3.z3util.get_vars(expr1_simplify))
+    vars2 = set(z3.z3util.get_vars(expr2_simplify))
+    all_vars = vars1 | vars2
+
+    T_var = next((v for v in all_vars if str(v) == "T"), None)
+    if T_var is not None:
+        solver = z3.Solver()
+        # ✅ try multiple concrete instantiations
+        for concrete in [0, 1, 2]:
+            solver.push()
+            solver.add(T_var == z3.BitVecVal(concrete, 64))
+            solver.add(expr1_simplify != expr2_simplify)
+            if solver.check() == z3.unsat:
+                return True
+            solver.pop()
         return False
+
+    return prove(expr1_simplify == expr2_simplify)
     
 def show_equal_z3(expr1, expr2):
     print("in show_equal_z3")

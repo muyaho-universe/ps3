@@ -1,0 +1,4 @@
+b = ["Call: bn_wexpand(T, T)", "Call: bn_wexpand(T, 1 + FakeRet(bn_get_top))", "Call: bn_wexpand(FakeRet(T), 1 + FakeRet(bn_get_top))", "Call: bn_wexpand(FakeRet(BN_CTX_get), 1 + FakeRet(bn_get_top))", "Call: bn_wexpand(FakeRet(BN_CTX_get), 2*T)", "Call: bn_wexpand(FakeRet(BN_CTX_get), 1 + T)", "Call: bn_wexpand(FakeRet(BN_CTX_get), 2*T)", "Call: bn_wexpand(FakeRet(BN_CTX_get), FakeRet(T) + T)", "Call: bn_wexpand(FakeRet(BN_CTX_get), FakeRet(bn_get_top) + T)", "Call: bn_wexpand(FakeRet(BN_CTX_get), 1 + T)", "Call: bn_wexpand(FakeRet(BN_CTX_get), 1 + FakeRet(T))", "Call: bn_wexpand(FakeRet(BN_CTX_get), 1 + FakeRet(bn_get_top))", "Call: bn_wexpand(FakeRet(BN_CTX_get), FakeRet(bn_get_top) + T)", "Call: bn_wexpand(FakeRet(BN_CTX_get), 1 + FakeRet(bn_get_top))", "Call: bn_wexpand(FakeRet(BN_CTX_get), 1 + FakeRet(bn_get_top))"]
+
+for i, item in enumerate(b):
+    print(f"{i+1}: {item}")

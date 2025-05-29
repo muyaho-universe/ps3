@@ -773,10 +773,10 @@ class Test:
                     vuln_effect, patch_effect = vuln_effect-patch_effect, patch_effect-vuln_effect
                     vuln_effect = list(vuln_effect)
                     patch_effect = list(patch_effect)
-                    
-                    # TODO: 여기서 refinement
-                    vuln_effect, patch_effect = refine_sig(vuln_effect, patch_effect)
 
+                    # TODO: 여기서 refinement
+                    if vuln_effect != [] and patch_effect != []:    
+                        vuln_effect, patch_effect = refine_sig(vuln_effect, patch_effect)
                     sig.sig_dict["add"] = patch_effect
                     sig.sig_dict["remove"] = vuln_effect
                 else:
@@ -799,7 +799,8 @@ class Test:
             vuln_match, patch_match = [], []
             all_effects = extrace_effect(traces)
             # logger.info(f"all_effects: {set(all_effects)}")
-            logger.info(f"all_effects: {sorted(set(str(i) for i in all_effects))}")
+            # logger.info(f"all_effects: {sorted(str(InspectInfo(i)) for i in all_effects)}")
+            # exit(0)
             # for effect in all_effects:
             #     logger.info(f"effect: {effect}")
             test = False
@@ -834,6 +835,8 @@ class Test:
                 if vuln in all_effects:
                     vuln_match.append(vuln)
             for patch in patch_effect:
+                # print(f"patch: {InspectInfo(patch)}, is in all_effects: {patch in all_effects}")
+                # print(f"type(patch): {type(patch)}, type(all_effects[0]): {type(all_effects[0])}")
                 if patch in all_effects:
                     # for i in all_effects:
                     #     if i == patch:
@@ -841,7 +844,7 @@ class Test:
                     #         i.show_eq(patch)
                     patch_match.append(patch)
             logger.info(f"vuln match {vuln_match}, patch match {patch_match}")
-            
+            # exit(0)
             # If the pattern is If, then we should check there at least one condition in matched effect
             if patch_use_pattern == "If":
                 # patch_match = [

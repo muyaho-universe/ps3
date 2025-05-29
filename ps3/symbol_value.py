@@ -89,5 +89,8 @@ class AnySymbol(SymbolicValue):
     def __repr__(self) -> str:
         return "Any"
     
+    def __hash__(self):
+        return hash("AnySymbol")
+    
     def __eq__(self, other):
         return True

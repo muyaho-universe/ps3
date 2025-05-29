@@ -54,18 +54,26 @@ class InspectInfo:
     #     return False
 
     def __eq__(self, __o: object) -> bool:
+        
         if not isinstance(__o, InspectInfo):
             return False
+        # if isinstance(self.ins, )
         if isinstance(self.ins, Effect.Call) and isinstance(__o.ins, Effect.Call):
+            # return self.ins == __o.ins
             return self.ins.name == __o.ins.name and all(simplify.equal(a, b) for a, b in zip(self.ins.args, __o.ins.args))
         elif isinstance(self.ins, Effect.Condition) and isinstance(__o.ins, Effect.Condition):
+            # return self.ins == __o.ins
+            # print(f"Comparing {self}:{type(self.ins.expr)} with {__o} in InspectInfo.__eq__")
             return simplify.equal(self.ins.expr, __o.ins.expr)
         elif isinstance(self.ins, Effect.Return) and isinstance(__o.ins, Effect.Return):
             return simplify.equal(self.ins.expr, __o.ins.expr)
+            # return self.ins == __o.ins
         elif isinstance(self.ins, Effect.Put) and isinstance(__o.ins, Effect.Put):
             return self.ins.reg == __o.ins.reg and simplify.equal(self.ins.expr, __o.ins.expr)
+            # return self.ins == __o.ins
         elif isinstance(self.ins, Effect.Store) and isinstance(__o.ins, Effect.Store):
             return simplify.equal(self.ins.addr, __o.ins.addr) and simplify.equal(self.ins.expr, __o.ins.expr)
+            # return self.ins == __o.ins
         else:
             return False
 
@@ -106,6 +114,7 @@ class InspectInfo:
             print(f"self name: {self.ins.name}, other name: {other.ins.name}")
             print(f"args equal: {[simplify.show_equal(a, b) for a, b in zip(self.ins.args, other.ins.args)]}")
         elif isinstance(self.ins, Effect.Condition) and isinstance(other.ins, Effect.Condition):
+            
             print(f"Condition show equal: {simplify.show_equal(self.ins.expr, other.ins.expr)}")
         elif isinstance(self.ins, Effect.Return) and isinstance(other.ins, Effect.Return):
             print(f"Return show equal: {simplify.show_equal(self.ins.expr, other.ins.expr)}")

@@ -14,28 +14,61 @@ def simplify(expr: pe.IRExpr):
     return simplify_z3(to_z3(expr))
 
 
+# def equal(expr1: pe.IRExpr, expr2: pe.IRExpr) -> bool:
+#     if isinstance(expr1, AnySymbol) and not hasattr(expr2, "args"):
+#         return True
+#     if isinstance(expr2, AnySymbol) and not hasattr(expr1, "args"):
+#         return True
+#     # print(f"Comparing: {simplify(expr1)} and {simplify(expr2)}")
+#     # if "T" in str(simplify(expr1)).split("*")[-1]:
+#     #     return True
+#     # # if str(simplify(expr2)) == "T":
+#     # if "T" in str(simplify(expr2)).split("*")[-1]:
+#     #     return True
+#     if isinstance(expr1, int) or isinstance(expr1, str):
+#         return expr1 == expr2
+#     if isinstance(expr1, list):
+#         if not isinstance(expr2, list):
+#             return False
+#         if len(expr1) != len(expr2):
+#             return False
+#         for i in range(len(expr1)):
+#             if not equal(expr1[i], expr2[i]):
+#                 return False
+#         return True
+#     return equal_z3(to_z3(expr1), to_z3(expr2))
+
 def equal(expr1: pe.IRExpr, expr2: pe.IRExpr) -> bool:
-    if isinstance(expr1, AnySymbol) or isinstance(expr2, AnySymbol):
-        # If either is AnySymbol, we consider them equal
+    """
+    Determines whether expr1 semantically generalizes or equals expr2.
+    - If expr1 is more abstract (contains AnySymbol), it may generalize expr2.
+    - Does not assume symmetry: equal(expr1, expr2) != equal(expr2, expr1)
+    """
+    z3_expr1 = simplify_z3(to_z3(expr1))
+    z3_expr2 = simplify_z3(to_z3(expr2))
+
+    # Quick path: syntactic equality
+    if z3_expr1.eq(z3_expr2):
         return True
-    # print(f"Comparing: {simplify(expr1)} and {simplify(expr2)}")
-    if "T" in str(simplify(expr1)).split("*")[-1]:
-        return True
-    # if str(simplify(expr2)) == "T":
-    if "T" in str(simplify(expr2)).split("*")[-1]:
-        return True
-    if isinstance(expr1, int) or isinstance(expr1, str):
-        return expr1 == expr2
-    if isinstance(expr1, list):
-        if not isinstance(expr2, list):
-            return False
-        if len(expr1) != len(expr2):
-            return False
-        for i in range(len(expr1)):
-            if not equal(expr1[i], expr2[i]):
+
+    # Generalization check: does expr1 (possibly with AnySymbol "T") cover expr2?
+    T_vars = [v for v in z3.z3util.get_vars(z3_expr1) if str(v) == "T"]
+    if T_vars:
+        solver = z3.Solver()
+        for T in T_vars:
+            for concrete in [0, 1, 2, 3]:
+                solver.push()
+                solver.add(T == z3.BitVecVal(concrete, 64))
+                solver.add(z3_expr1 != z3_expr2)
+                if solver.check() == z3.unsat:
+                    solver.pop()
+                    continue
+                solver.pop()
                 return False
         return True
-    return equal_z3(to_z3(expr1), to_z3(expr2))
+
+    # Otherwise use semantic equivalence via SMT solving
+    return prove(z3_expr1 == z3_expr2)
 
 def show_equal(expr1: pe.IRExpr, expr2: pe.IRExpr) -> bool:
     if isinstance(expr1, int) or isinstance(expr1, str):
@@ -77,6 +110,10 @@ def to_z3_true(expr: pe.IRExpr | pc.IRConst | int) -> z3.ExprRef:
             # use the memory address as the variable name
             return mapfunction(to_z3(expr.address))
         if isinstance(expr, ReturnSymbol):
+            # name = expr.name
+            # if isinstance(name, AnySymbol) or str(name) == "T":
+            #     return z3.BitVec("T", 64)
+            # return z3.BitVec(f"FakeRet({order})", 64)
             return z3.BitVec(str(expr), 64)
         return z3.BitVecVal(expr._value, 64)
     if isinstance(expr, pe.Const):

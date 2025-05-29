@@ -8,84 +8,8 @@ from copy import deepcopy
 from simplify import simplify
 from node import Node
 from itertools import product
+from collections import deque
 
-# def possible_subs(expr) -> Iterator[IRExpr | SymbolicValue]:
-#     # print(f"[possible_subs] Generating substitutions type {type(expr)}")
-#     # yield AnySymbol()  # Always yield AnySymbol first
-#     if isinstance(expr, IRExpr):
-#         if isinstance(expr, Binop):
-#             left, right = expr.args
-#             if isinstance(left, (int, str, Const)):
-#                 for rsub in possible_subs(right):
-#                     yield Binop(expr.op, (AnySymbol(), rsub))
-
-#             if isinstance(right, (int, str, Const)):
-#                 for lsub in possible_subs(left):
-#                     yield Binop(expr.op, (lsub, AnySymbol()))
-#             for lsub in possible_subs(left):
-#                 yield Binop(expr.op, (lsub, right))
-#             for rsub in possible_subs(right):
-#                 yield Binop(expr.op, (left, rsub))
-            
-#             yield expr
-            
-
-#         elif isinstance(expr, Unop):
-#             for sub in possible_subs(expr.args[0]):
-#                 yield Unop(expr.op, [sub])
-#             yield expr  # 원래 표현식도 포함
-#         # elif isinstance(expr, Load):
-#         #     # yield Load(expr.end, AnySymbol())  # ⊤을 허용하는 경우
-#         #     for sub in possible_subs(expr.addr):
-#         #         yield Load(expr.end, expr.ty, sub)
-#         # elif isinstance(expr, ITE):
-#         #     for c in possible_subs(expr.cond):
-#         #         yield ITE(c, expr.iftrue, expr.iffalse)
-#         #     for t in possible_subs(expr.iftrue):
-#         #         yield ITE(expr.cond, t, expr.iffalse)
-#         #     for f in possible_subs(expr.iffalse):
-#         #         yield ITE(expr.cond, expr.iftrue, f)
-#         # elif isinstance(expr, CCall):
-#         #     for i, arg in enumerate(expr.args):
-#         #         # call은 level 1에서만 ⊤을 허용
-#         #         new_args = list(expr.args)
-#         #         new_args[i] = AnySymbol()
-#         #         yield CCall(expr.retty, expr.cee, tuple(new_args))
-#         elif isinstance(expr, Const):
-#             yield from possible_subs(expr.con)  # Const의 값에 대해 ⊤을 허용하는 경우
-#             yield expr  # 원래 표현식도 포함
-#         else:
-#             print(f"[possible_subs] Unknown IRExpr type: {expr} {type(expr)}")
-#             exit(1)
-
-
-#     elif isinstance(expr, IRConst):
-#     #     # print(f"[possible_subs] IRConst: {expr}")
-#     #     yield from possible_subs(expr)  # IRConst의 값에 대해 ⊤을 허용하는 경우
-        
-#         if isinstance(expr, SymbolicValue):
-#             yield AnySymbol()  # ⊤을 허용하는 경우
-#             if isinstance(expr.value, AnySymbol):
-#                 return  
-#             elif isinstance(expr, ReturnSymbol):
-                
-#                 for sub in possible_subs(expr.name):
-#                     yield ReturnSymbol(sub)
-#             elif isinstance(expr, MemSymbol):
-#                 # yield MemSymbol(AnySymbol())  # ⊤을 허용하는 경우
-#                 for sub in possible_subs(expr.address):
-#                     yield MemSymbol(sub)
-#         elif isinstance(expr, (pc.F32, pc.F64, pc.U1, pc.U8, pc.U16, pc.U32, pc.U64)):
-#             yield from possible_subs(expr.value)  # IRConst의 값에 대해 ⊤을 허용하는 경우
-#         else:
-#             print(f"[possible_subs] Unknown IRConst type: {expr} {type(expr)}")
-#             exit(1)
-#     elif isinstance(expr, int) or isinstance(expr, str):
-#         yield AnySymbol()  # int나 str 타입도 ⊤을 허용
-
-#     else:
-#         print(f"[possible_subs] Unknown expr type: {type(expr)}")
-#         exit(1)
 
 def tree_possible_subs(tree: Node, fallback_effect: Effect) -> Iterator[Effect]:
     # 각 노드에서 가능한 대체 표현을 재귀적으로 생성
@@ -112,38 +36,74 @@ def tree_possible_subs(tree: Node, fallback_effect: Effect) -> Iterator[Effect]:
 
     # 전체 트리에서 가능한 대체 트리 생성
     candidates = helper(tree)
+    sorted_candidates = sorted(candidates, key=abstraction_score) # [1:] # 가장 추상화된 트리는 제외 (T로만 구성된 트리)
 
     # 각 트리를 effect로 변환 (불가능한 경우 fallback 사용)
-    for cand in candidates:
+    for cand in sorted_candidates:
         try:
             yield node_to_effect(cand, fallback_effect=fallback_effect)
         except Exception:
             continue
-        
+
+
+def abstraction_score(node: Node) -> int:
+    """
+    더 추상화된 트리는 더 낮은 점수를 갖는다.
+    """
+    # 완전히 추상화된 경우
+    if node.label == "Const: T":
+        return 0
+
+    score = 0
+
+    # 재귀적으로 자식 노드들을 검사
+    for child in node.children:
+        score += abstraction_score(child)
+
+    # 노드 자체가 T가 아닌 경우 penalty
+    if node.label != "Const: T":
+        score += 1
+
+    return score
+
+
 def refine_one(myself: list[InspectInfo], other: list[InspectInfo]) -> list[InspectInfo]:
     result = []
     for i, info in enumerate(myself):
         effect = deepcopy(info.ins) 
         temp = []
+        count = 0
+        go = True
         root = effect_to_node(info.ins)
         for generalized_tree in tree_possible_subs(root, fallback_effect=effect):
-            # print(f"generated: {generated}")
-            # print(f"generated.label: {generated.label}")
-            # print(f"generated.children: {generated.children}")
-            # print(f"generated.level: {generated.level}")
-            # print(f"node_to_effect(generated): {node_to_effect(generated)}")
-                
-            try:
-                new_effect = generalized_tree
-            except ValueError as e:
-                print(f"Error converting node to effect: {e}, node: {generalized_tree.print()}")
-                exit(1)
+            # try:
+            #     new_effect = generalized_tree
+            # except ValueError as e:
+            #     print(f"Error converting node to effect: {e}, node: {generalized_tree.print()}")
+            #     exit(1)
+            new_effect = generalized_tree   
             new_info = InspectInfo(new_effect)
-            # if new_info not in other:
             temp.append(new_info)
+            if count < 2  and  isinstance(effect, Effect.Put):
+                
+                count += 1
+            else:
+                
+                if str(new_info) == "Put: 32 = FakeRet(T) + T":
+                    for item in other:
+                        if str(item) == "Put: 32 = 2 + FakeRet(bn_get_top)":
+                            print(f"Found: {new_info} and {item}, new_info == item {new_info == item}")
+                            exit(1)
+                if go and new_info not in other:
+                    myself[i] = new_info
+                    go = False
+                    # break  # 다른 효과와 겹치지 않는 첫 번째 generalized_tree를 찾으면 중단
+
+                
 
         result.append(temp)
-    return result 
+    print(f"refine result: {result}")
+    return myself 
 
 
 def refine_sig(vuln_effect: list[InspectInfo], patch_effect: list[InspectInfo]) -> tuple[list[InspectInfo], list[InspectInfo]]:    
@@ -164,9 +124,14 @@ def refine_sig(vuln_effect: list[InspectInfo], patch_effect: list[InspectInfo]) 
     #     print("=" * 50)
     # print(f"old == restored: {old_vuln_effect == temp}")
     vuln_effect = refine_one(vuln_effect, patch_effect)
-    # patch_effect = refine_one(patch_effect, vuln_effect)
+    
     print(f"old_vuln_effect: {old_vuln_effect}")
     print(f"vuln_effect: {vuln_effect}")
+    print("=" * 50)
+    patch_effect = refine_one(patch_effect, vuln_effect)
+    print(f"old_patch_effect: {old_patch_effect}")
+    print(f"patch_effect: {patch_effect}")
+    print("=" * 50)
 
     # for i in (0, 1):
     #     if isinstance(vuln_effect[i][0].ins, Effect.Put):

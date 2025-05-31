@@ -13,10 +13,10 @@ from partail_eq import is_generalization_of
 
 
 def tree_possible_subs(tree: Node, fallback_effect: Effect) -> Iterator[Effect]:
-    print(f"tree_possible_subs(tree{tree.print()})")
+    # print(f"tree_possible_subs(tree{tree.print()})")
     # 각 노드에서 가능한 대체 표현을 재귀적으로 생성
     def helper(node: Node) -> list[Node]:
-        print(f"helper(node{node.label})")
+        # print(f"helper(node{node.label})")
         # 자식이 없는 리프 노드인 경우: 자신 그대로, 그리고 T로 대체
         if not node.children:
             return [deepcopy(node), Node("Const: T", level=node.level)]
@@ -39,7 +39,7 @@ def tree_possible_subs(tree: Node, fallback_effect: Effect) -> Iterator[Effect]:
 
     # 전체 트리에서 가능한 대체 트리 생성
     candidates = helper(tree)
-    print("helper done")
+    # print("helper done")
     sorted_candidates = sorted(candidates, key=abstraction_score) # [1:] # 가장 추상화된 트리는 제외 (T로만 구성된 트리)
 
     # 각 트리를 effect로 변환 (불가능한 경우 fallback 사용)
@@ -78,7 +78,7 @@ def refine_one(myself: list[InspectInfo], other: list[InspectInfo]) -> list[Insp
         temp = []
         count = 0
         go = True
-        print("go into other with info:", info)
+        # print("go into other with info:", info)
         root = effect_to_node(info.ins)
         for generalized_tree in tree_possible_subs(root, fallback_effect=effect):
             # try:
@@ -96,23 +96,67 @@ def refine_one(myself: list[InspectInfo], other: list[InspectInfo]) -> list[Insp
                 
             #     count += 1
             # else:
-                
-            # if str(new_info) == "Put: 32 = 1 + T":
-            #     # for item in other:
-            #     #     if str(item) == "Put: 32 = 2 + FakeRet(bn_get_top)":
-            #     print("other:", other) # Put: 64 = 2 + FakeRet(bn_get_top), Put: 32 = 2 + FakeRet(bn_get_top), Call: bn_wexpand(FakeRet(BN_CTX_get), 2 + FakeRet(bn_get_top))
-            #     print(f"Found: {new_info}, new_info in other: {new_info in other}") # False
+            t = "Put: 32 = T + FakeRet(T)"
+            t2 = "Put: 32 = 2 + FakeRet(bn_get_top)"
+            # print(f"new_info: {new_info} {str(new_info) == t }") # Put: 32 = 2 + FakeRet(bn_get_top)
+            # if str(new_info) == t:
+            #     print(other)
+            #     for item in other:
+            #         print(f"item: {item} {str(item) == t2}") # Put: 32 = 2 + FakeRet(bn_get_top)
+            #         if str(item) == t2:
+            # #     # print("other:", other) # Put: 64 = 2 + FakeRet(bn_get_top), Put: 32 = 2 + FakeRet(bn_get_top), Call: bn_wexpand(FakeRet(BN_CTX_get), 2 + FakeRet(bn_get_top))
+            #             print("==========RALO==========")
+            #             print(f"Found: {new_info} and {item}") # True
+            #             r1 = effect_to_node(new_info.ins)
+            #             r2 = effect_to_node(item.ins)
+            #             print("-" * 50)
+            #             # print(f"r1: {r1.print()}")
+            #             r1.print()
+            #             print("-" * 50)
+            #             # print(f"r2: {r2.print()}")
+            #             r2.print()
+            #             print("-" * 50)
+            #             # print(f"type({item.ins.expr.args[1].con}): {type(item.ins.expr.args[1].con)}") # <class 'inspect_info.InspectInfo'>
+            #             print(f"new_info == item: {new_info == item}") # True
+            #             print("==========RALO==========")
+            #             if go:
+            #                 go = False
+            #             else:
+            #                 exit(1)
+
+            # if str(new_info) == "Put: 32 = 1 + FakeRet(T)":
+            #     for item in other:
+            #         if str(item) == "Put: 32 = 2 + FakeRet(bn_get_top)":
+            #             print("==========RALO==========")
+            #             print(f"Found: {new_info} and {item}") # False
+            #             r1 = effect_to_node(new_info.ins)
+            #             r2 = effect_to_node(item.ins)
+            #             print("-" * 50)
+            #             # print(f"r1: {r1.print()}")
+            #             r1.print()
+            #             print("-" * 50)
+            #             # print(f"r2: {r2.print()}")
+            #             r2.print()
+            #             print("-" * 50)
+            #             print(f"new_info == item: {new_info == item}") # False
+            #             print("==========RALO==========")
+            #             if go:
+            #                 go = False
+            #             else:
+            #                 exit(1)
             #     # print(f"type(new_info.ins.expr.args[0]): {type(new_info.ins.expr.args[0])}")
             #     # print(f"type(item.ins.expr.args[0]): {type(item.ins.expr.args[0])} {item.ins.expr.args[0]}")
             #     exit(1)
-            print("go into other with new_info:", new_info)
-            if go and new_info not in other:
+            # print("go into other with new_info:", new_info)
+
+            if go and new_info not in other :
+                print(f"refine_one: {new_info} not in other {other}")
                 myself[i] = new_info
                 go = False
                     # break  # 다른 효과와 겹치지 않는 첫 번째 generalized_tree를 찾으면 중단
 
                 
-
+        
         result.append(temp)
     print(f"refine result: {result}")
     return myself 
@@ -121,9 +165,16 @@ def refine_one(myself: list[InspectInfo], other: list[InspectInfo]) -> list[Insp
 def refine_sig(vuln_effect: list[InspectInfo], patch_effect: list[InspectInfo]) -> tuple[list[InspectInfo], list[InspectInfo]]:    
     old_vuln_effect = deepcopy(vuln_effect)
     old_patch_effect = deepcopy(patch_effect)
-    
-    vuln_effect = simplify_effects(vuln_effect)
-    patch_effect = simplify_effects(patch_effect)
+    vuln_effect = [rebuild_effects(effect) for effect in vuln_effect]
+    patch_effect = [rebuild_effects(effect) for effect in patch_effect]
+    # print(f"old_vuln_effect: {old_vuln_effect}")
+    # print(f"rebuild vuln_effect: {vuln_effect}")
+    # print(f"same: {old_vuln_effect == vuln_effect}")
+    assert vuln_effect == old_vuln_effect, "Rebuild failed for vuln_effect"
+    assert patch_effect == old_patch_effect, "Rebuild failed for patch_effect"
+    # exit(1)
+    # vuln_effect = simplify_effects(vuln_effect)
+    # patch_effect = simplify_effects(patch_effect)
     temp = []
     # for i in range(len(vuln_effect)):
     #     # if isinstance(vuln_effect[i].ins, Effect.Call):     
@@ -140,10 +191,10 @@ def refine_sig(vuln_effect: list[InspectInfo], patch_effect: list[InspectInfo]) 
     print(f"old_vuln_effect: {old_vuln_effect}")
     print(f"vuln_effect: {vuln_effect}")
     print("=" * 50)
-    patch_effect = refine_one(patch_effect, vuln_effect)
-    print(f"old_patch_effect: {old_patch_effect}")
-    print(f"patch_effect: {patch_effect}")
-    print("=" * 50)
+    # patch_effect = refine_one(patch_effect, vuln_effect)
+    # print(f"old_patch_effect: {old_patch_effect}")
+    # print(f"patch_effect: {patch_effect}")
+    # print("=" * 50)
 
     # for i in (0, 1):
     #     if isinstance(vuln_effect[i][0].ins, Effect.Put):
@@ -152,7 +203,107 @@ def refine_sig(vuln_effect: list[InspectInfo], patch_effect: list[InspectInfo]) 
     #         print(f"vuln_effect[{i}][3].ins: {vuln_effect[i][2].ins.expr}, type: {type(vuln_effect[i][3].ins.expr)}")
     
     exit(1)
-    return vuln_effect, patch_effect   
+    return vuln_effect, patch_effect 
+
+def rebuild_effects(effect: InspectInfo) -> InspectInfo:
+    """
+    InspectInfo를 받아서, str 형태 그대로 최소화된 effect로 변환합니다.
+    예: "Put: 32 = 2 + FakeRet(bn_get_top)" → Effect.Put(32, Binop("Iop_Add64", [Const(2), ReturnSymbol("bn_get_top")]))
+    """
+    original_str = str(effect)
+    if "Put: " in original_str:
+        # Put 효과를 처리
+        parts = original_str.split(" = ")
+        reg_part = parts[0].replace("Put: ", "").strip()
+        expr_part = parts[1].strip()
+
+        # reg 부분에서 숫자만 추출
+        reg = int(reg_part)
+
+        # expr 부분을 Binop으로 변환
+        if " + " in expr_part:
+            left, right = expr_part.split(" + ")
+            left = Const(int(left.strip())) if left.isdigit() else ReturnSymbol(left.strip().split("FakeRet(")[-1].split(")")[0].strip())
+            right = Const(int(right.strip())) if right.isdigit() else ReturnSymbol(right.strip().split("FakeRet(")[-1].split(")")[0].strip())
+            expr = Binop("Iop_Add64", [left, right])
+        else:
+            expr = ReturnSymbol(expr_part)
+
+        return InspectInfo(Effect.Put(reg, expr))
+    elif "Call: " in original_str:
+        # Call 효과를 처리
+        # 예: Call: bn_wexpand(FakeRet(BN_CTX_get), 1 + FakeRet(bn_get_top))
+        parts = original_str.split("(", 1)
+        name = parts[0].replace("Call: ", "").strip()
+        args_part = parts[1].rstrip(")").strip()
+
+        # 괄호 깊이 기반 인자 분리
+        args = []
+        current = ""
+        depth = 0
+        for ch in args_part:
+            if ch == "," and depth == 0:
+                if current.strip():
+                    args.append(current.strip())
+                current = ""
+            else:
+                if ch == "(":
+                    depth += 1
+                elif ch == ")":
+                    depth -= 1
+                current += ch
+        if current.strip():
+            args.append(current.strip())
+
+        # 각 인자를 재귀적으로 파싱
+        def parse_arg(arg):
+            arg = arg.strip()
+            # Binop: "1 + FakeRet(bn_get_top)"
+            if " + " in arg:
+                left, right = arg.split(" + ", 1)
+                left = Const(int(left.strip())) if left.strip().isdigit() else ReturnSymbol(left.strip().split("FakeRet(")[-1].split(")")[0].strip()) if "FakeRet(" in left else ReturnSymbol(left.strip())
+                right = Const(int(right.strip())) if right.strip().isdigit() else ReturnSymbol(right.strip().split("FakeRet(")[-1].split(")")[0].strip()) if "FakeRet(" in right else ReturnSymbol(right.strip())
+                return Binop("Iop_Add64", [left, right])
+            elif "FakeRet(" in arg:
+                return ReturnSymbol(arg.split("FakeRet(")[-1].split(")")[0].strip())
+            elif arg.isdigit():
+                return Const(int(arg))
+            else:
+                return ReturnSymbol(arg)
+        args = [parse_arg(a) for a in args]
+        return InspectInfo(Effect.Call(name, args))
+    elif "Condition: " in original_str:
+        # Condition 효과를 처리
+        expr_part = original_str.replace("Condition: ", "").strip()
+        expr = Const(int(expr_part)) if expr_part.isdigit() else ReturnSymbol(expr_part.split("FakeRet(")[-1].split(")")[0].strip())
+        return InspectInfo(Effect.Condition(expr))
+    elif "Return: " in original_str:
+        # Return 효과를 처리
+        expr_part = original_str.replace("Return: ", "").strip()
+        expr = Const(int(expr_part)) if expr_part.isdigit() else ReturnSymbol(expr_part.split("FakeRet(")[-1].split(")")[0].strip())
+        return InspectInfo(Effect.Return(expr))
+    elif "Store: " in original_str:
+        # Store 효과를 처리
+        parts = original_str.split(" = ")
+        addr_part = parts[0].replace("Store: ", "").strip()
+        expr_part = parts[-1].strip()
+
+        # addr 부분을 Const 또는 ReturnSymbol로 변환
+        if " + " in addr_part:
+            left, right = addr_part.split(" + ")
+            left = Const(int(left.strip())) if left.isdigit() else ReturnSymbol(left.strip().split("FakeRet(")[-1].split(")")[0].strip())
+            right = Const(int(right.strip())) if right.isdigit() else ReturnSymbol(right.strip().split("FakeRet(")[-1].split(")")[0].strip())
+            addr = Binop("Iop_Add64", [left, right])
+        else:
+            addr = ReturnSymbol(addr_part)
+
+        # expr 부분을 Const 또는 ReturnSymbol로 변환
+        expr = Const(int(expr_part)) if expr_part.isdigit() else ReturnSymbol(expr_part.split("FakeRet(")[-1].split(")")[0].strip())
+
+        return InspectInfo(Effect.Store(addr, expr))
+    else:
+        print(f"Unknown effect format: {original_str}")
+        exit(1)
 
 def simplify_addr_expr(expr):
     """
@@ -336,7 +487,8 @@ def node_to_expr(node: Node):
         return RdTmp(tmp)
 
     elif node.label.startswith("Const: T"):
-        return Const(AnySymbol())
+        # return Const(AnySymbol())
+        return AnySymbol()  # T는 AnySymbol로 변환
 
     elif node.label.startswith("Const: "):
         value = node.label[len("Const: "):]

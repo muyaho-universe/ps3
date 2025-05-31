@@ -128,6 +128,7 @@ def per_related(e1, e2) -> bool:
 
 
 
+
 def simplify(expr: pe.IRExpr):
     if isinstance(expr, int) or isinstance(expr, str) or expr == None:
         return expr
@@ -160,30 +161,116 @@ def simplify(expr: pe.IRExpr):
 #         return True
 #     return equal_z3(to_z3(expr1), to_z3(expr2))
 
-def equal(expr1, expr2):
+def effect_to_expr(effect):
+    """
+    Effect 객체에서 pyvex expr(혹은 expr 리스트)을 추출.
+    """
+    if hasattr(effect, "expr"):
+        return effect.expr
+    if hasattr(effect, "args"):
+        return effect.args
+    if hasattr(effect, "addr"):
+        return effect.addr
+    return effect  # 이미 expr일 수도 있음
+
+def contains_anysymbol(expr) -> bool:
+    """
+    expr(Effect, pyvex expr 등) 내부에 AnySymbol이 하나라도 포함되어 있으면 True.
+    """
+    # 1. unwrap Const 등으로 감싸진 것
+    expr = unwrap_const(expr)
+
+    # 2. 직접 AnySymbol이면 True
+    if isinstance(expr, AnySymbol):
+        return True
+
+    # 3. pyvex expr: args 속성 재귀 검사
+    if hasattr(expr, "args"):
+        for arg in expr.args:
+            if contains_anysymbol(arg):
+                return True
+
+    # 4. 사용자 정의 객체: __dict__의 값들 재귀 검사
+    if hasattr(expr, "__dict__"):
+        for v in expr.__dict__.values():
+            if contains_anysymbol(v):
+                return True
+
+    # 5. 리스트/튜플 등
+    if isinstance(expr, (list, tuple)):
+        for e in expr:
+            if contains_anysymbol(e):
+                return True
+
+    return False
+
+def is_effect_instance(obj):
+    """
+    True  ⇔  obj 가 effect.py 안에 정의된 Effect.<Something> 중첩 클래스
+    """
+    return (obj.__class__.__module__ == "effect"         # 파일이 effect.py
+            and obj.__class__.__qualname__.startswith("Effect."))
+
+def equal(expr1, expr2) -> bool:
     """
     구조-일반화(PER)·AnySymbol·Z3 논리적 동등성을 모두 고려하는 비교 함수.
     """
-    # 0. 껍데기 제거
-    expr1 = unwrap_const(expr1)
-    expr2 = unwrap_const(expr2)
+    # print(f"Comparing: {type(expr1)} type of {expr1} and {type(expr2)} type of {expr2}")
 
-    # 1. 구조적 PER 먼저
-    if per_related(expr1, expr2):
-        return True
+    # 처음엔 effect로 시작
+    if is_effect_instance(expr1) and is_effect_instance(expr2):
+        # 0. 껍데기 제거
+        # print("Comparing effects")
+        # try:
+        #     print(f"before unwrap, expr2: {expr2.expr.args[1].con}, type: {type(expr2.expr.args[1].con)}")
 
-    # 2. AnySymbol 포함이면 무조건 매치(True)
-    if isinstance(expr1, AnySymbol) or isinstance(expr2, AnySymbol):
-        return True
-
-    # 3. Z3 동등성 확인
-    try:
-        eq = to_z3(expr1) == to_z3(expr2)
-        eq_simplified = z3.simplify(eq)
-        return prove(eq_simplified)
-    except Exception as ex:
-        print("Z3 convert error:", ex)
-        return False
+        # except Exception as e:
+        #     pass
+        # expr1 = unwrap_const(expr1)
+        # expr2 = unwrap_const(expr2)
+        # try:
+        #     print(f"Comparing: {expr2.expr.args[1].con}, type: {type(expr2.expr.args[1].con.value)}")
+        # except Exception as e:
+        #     pass
+        # print(f"expr1 contains AnySymbol: {contains_anysymbol(expr1)}")
+        # print(f"expr2 contains AnySymbol: {contains_anysymbol(expr2)}")
+        # 1. 구조적 PER 먼저 (refine 부터 AnySymbol이 있을 수 있으므로 이때부터는 구조적 PER)
+        if contains_anysymbol(expr1) or contains_anysymbol(expr2):
+            print("Using per_related due to AnySymbol presence")
+            return per_related(expr1, expr2)
+        else:
+            if isinstance(expr1, Effect.Call) and isinstance(expr2, Effect.Call):
+                # return expr1 == expr2
+                return expr1.name == expr2.name and all(equal(a, b) for a, b in zip(expr1.args, expr2.args))
+            elif isinstance(expr1, Effect.Condition) and isinstance(expr2, Effect.Condition):
+                # return expr1 == expr2
+                # print(f"Comparing {expr1}:{type(expr1.expr)} with {expr2} in InspectInfo.__eq__")
+                return equal(expr1.expr, expr2.expr)
+            elif isinstance(expr1, Effect.Return) and isinstance(expr2, Effect.Return):
+                return equal(expr1.expr, expr2.expr)
+                # return expr1 == expr2
+            elif isinstance(expr1, Effect.Put) and isinstance(expr2, Effect.Put):
+                return expr1.reg == expr2.reg and equal(expr1.expr, expr2.expr)
+                # return expr1 == expr2
+            elif isinstance(expr1, Effect.Store) and isinstance(expr2, Effect.Store):
+                return equal(expr1.addr, expr2.addr) and equal(expr1.expr, expr2.expr)
+                # return expr1.ins == __o.ins
+            else:
+                return False
+    # vex ir expr
+    else:
+        if isinstance(expr1, int) or isinstance(expr1, str):
+            return expr1 == expr2
+        if isinstance(expr1, list):
+            if not isinstance(expr2, list):
+                return False
+            if len(expr1) != len(expr2):
+                return False
+            for i in range(len(expr1)):
+                if not equal(expr1[i], expr2[i]):
+                    return False
+            return True
+        return equal_z3(to_z3(expr1), to_z3(expr2))
 
 
 # def equal(expr1, expr2):
@@ -375,10 +462,6 @@ def to_z3_true(expr: pe.IRExpr | pc.IRConst | int) -> z3.ExprRef:
             # use the memory address as the variable name
             return mapfunction(to_z3(expr.address))
         if isinstance(expr, ReturnSymbol):
-            # name = expr.name
-            # if isinstance(name, AnySymbol) or str(name) == "T":
-            #     return z3.BitVec("T", 64)
-            # return z3.BitVec(f"FakeRet({order})", 64)
             return z3.BitVec(str(expr), 64)
         return z3.BitVecVal(expr._value, 64)
     if isinstance(expr, pe.Const):
@@ -501,32 +584,52 @@ def simplify_z3(expr):
 #         return False
 
 def equal_z3(expr1, expr2):
+    # print("in equal_z3")
+    # print(f"expr1: {expr1}, {type(expr1)}")
+    # print(f"expr2: {expr2}, {type(expr2)}")
     expr1_simplify = simplify_z3(expr1)
     expr2_simplify = simplify_z3(expr2)
-
-    # fast path
-    if expr1_simplify.eq(expr2_simplify):
+    result = z3.eq(expr1_simplify, expr2_simplify)
+    # print(f"expr1_simplify: {expr1_simplify}")
+    # print(f"expr2_simplify: {expr2_simplify}")
+    if result:
         return True
-
-    # check if 'T' appears
-    vars1 = set(z3.z3util.get_vars(expr1_simplify))
-    vars2 = set(z3.z3util.get_vars(expr2_simplify))
-    all_vars = vars1 | vars2
-
-    T_var = next((v for v in all_vars if str(v) == "T"), None)
-    if T_var is not None:
-        solver = z3.Solver()
-        # ✅ try multiple concrete instantiations
-        for concrete in [0, 1, 2]:
-            solver.push()
-            solver.add(T_var == z3.BitVecVal(concrete, 64))
-            solver.add(expr1_simplify != expr2_simplify)
-            if solver.check() == z3.unsat:
-                return True
-            solver.pop()
+    else:
+        # use prove to check if the two expr are equal semanticly
+        if 'If' in str(expr1_simplify) and 'If' in str(expr2_simplify):
+            try:
+                return prove(expr1_simplify == expr2_simplify)
+            except Exception:
+                return False
         return False
 
-    return prove(expr1_simplify == expr2_simplify)
+# def equal_z3(expr1, expr2):
+#     expr1_simplify = simplify_z3(expr1)
+#     expr2_simplify = simplify_z3(expr2)
+
+#     # fast path
+#     if expr1_simplify.eq(expr2_simplify):
+#         return True
+
+#     # check if 'T' appears
+#     vars1 = set(z3.z3util.get_vars(expr1_simplify))
+#     vars2 = set(z3.z3util.get_vars(expr2_simplify))
+#     all_vars = vars1 | vars2
+
+#     T_var = next((v for v in all_vars if str(v) == "T"), None)
+#     if T_var is not None:
+#         solver = z3.Solver()
+#         # ✅ try multiple concrete instantiations
+#         for concrete in [0, 1, 2]:
+#             solver.push()
+#             solver.add(T_var == z3.BitVecVal(concrete, 64))
+#             solver.add(expr1_simplify != expr2_simplify)
+#             if solver.check() == z3.unsat:
+#                 return True
+#             solver.pop()
+#         return False
+
+#     return prove(expr1_simplify == expr2_simplify)
     
 def show_equal_z3(expr1, expr2):
     print("in show_equal_z3")

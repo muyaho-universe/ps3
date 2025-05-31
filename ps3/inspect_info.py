@@ -80,7 +80,7 @@ class InspectInfo:
         if not isinstance(other, InspectInfo):
             return False
         # 오직 PER만 사용!
-        return simplify.per_related(self.ins, other.ins)
+        return simplify.equal(self.ins, other.ins)
 
     def _z3_equal(self, a, b):
         # strict semantic equivalence

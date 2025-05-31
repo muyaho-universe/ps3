@@ -1,7 +1,7 @@
 import pyvex
 import pyvex.expr as pe
 from symbol_value import AnySymbol
-from simplify import simplify
+# from simplify import simplify, equal
 import node
 
 def expr_to_str(expr):
@@ -37,6 +37,7 @@ def expr_to_str(expr):
 
 
 class Effect:
+        
     class Call:
         # pyvex.expr in list
         def __init__(self, name: str, args: list):

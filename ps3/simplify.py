@@ -2,8 +2,130 @@ import pyvex.expr as pe
 import pyvex.const as pc
 from symbol_value import RegSymbol, ReturnSymbol, MemSymbol, AnySymbol
 import z3
+from pyvex.expr import Binop, Unop, Const, Load, IRConst, IRExpr  # …필요한 클래스만 임포트
+from symbol_value import AnySymbol, RegSymbol, ReturnSymbol, MemSymbol, SymbolicValue
+from effect import Effect
 
 mapfunction = z3.Function("Mem", z3.BitVecSort(64), z3.BitVecSort(64))
+
+COMMUTATIVE_OPS = {
+    "Iop_Add64", "Iop_Add32", "Add64", "Add32",
+    "Iop_Mul64", "Mul64",
+}
+
+def unwrap_const(expr):
+    """
+    Recursively strip Const wrappers that merely wrap another IRExpr /
+    SymbolicValue, so AnySymbol 등 내부 노드가 드러나도록 만든다.
+    """
+    while isinstance(expr, pe.Const) and isinstance(expr.con, (pe.IRExpr, SymbolicValue)):
+        expr = expr.con
+
+    # 재귀적으로 하위 노드도 처리
+    if isinstance(expr, pe.Unop):
+        expr.args = [unwrap_const(expr.args[0])]
+    elif isinstance(expr, pe.Binop):
+        expr.args = (
+            unwrap_const(expr.args[0]),
+            unwrap_const(expr.args[1]),
+        )
+    return expr
+
+# ---------- 1) 단일 식(Expr) 수준 ----------
+def is_generalization_of(g, c, depth=0):
+    tab = "  " * depth  # indent for debugging
+    g = unwrap_const(g)
+    c = unwrap_const(c)
+    # 0) Wildcard
+    if isinstance(g, AnySymbol):
+        # print(f"{tab}AnySymbol matches {c}")
+        return True
+    if isinstance(c, AnySymbol):
+        # print(f"{tab}{c} is AnySymbol (concrete side) – no match")
+        return False
+
+    # 1) 타입 불일치
+    if type(g) is not type(c):
+        # print(f"{tab}Type mismatch {type(g).__name__} vs {type(c).__name__}")
+        return False
+
+    # 2) 리프 노드
+    if isinstance(g, (int, str)):
+        ok = g == c
+        # print(f"{tab}Primitive {g} == {c}? {ok}")
+        return ok
+
+    # ----- 진짜 상수(pyVEX Const / IRConst) -----
+    if isinstance(g, (Const, IRConst)) and not isinstance(g, SymbolicValue):
+        return g.con == c.con
+
+    # ----- 심볼릭 값(RegSymbol, ReturnSymbol, …) -----
+    if isinstance(g, SymbolicValue):
+        return g == c          # __eq__ 이미 구현됨
+    # 3) Unop
+    if isinstance(g, Unop):
+        same_op = g.op == c.op
+        # print(f"{tab}Unop op {g.op} == {c.op}? {same_op}")
+        return same_op and is_generalization_of(g.args[0], c.args[0], depth+1)
+
+    # 4) Binop
+    if isinstance(g, Binop):
+        same_op = g.op == c.op
+        # print(f"{tab}Binop op {g.op} == {c.op}? {same_op}")
+        if not same_op:
+            return False
+        # 순서 유지
+        if (is_generalization_of(g.args[0], c.args[0], depth+1) and
+            is_generalization_of(g.args[1], c.args[1], depth+1)):
+            return True
+        # 교환 법칙
+        if g.op in COMMUTATIVE_OPS:
+            return (is_generalization_of(g.args[0], c.args[1], depth+1) and
+                    is_generalization_of(g.args[1], c.args[0], depth+1))
+        return False
+
+    # 5) Load
+    if isinstance(g, Load):
+        return is_generalization_of(g.addr, c.addr, depth+1)
+
+    # …Call, ITE 등 필요한 타입 추가
+    print(f"{tab}Unhandled node type {type(g).__name__}")
+    return False
+
+# ---------- 2) Effect(예: Put, Condition …) 수준 ----------
+def effect_generalization(g, c):
+    if type(g) is not type(c):
+        return False
+
+    # Put 예시
+    if g.__class__.__name__ == "Put":
+        # 실제 필드명에 맞추세요 (reg / offset / dst 등)
+        dst_g = getattr(g, "reg", getattr(g, "offset", None))
+        dst_c = getattr(c, "reg", getattr(c, "offset", None))
+        if dst_g != dst_c:
+            return False
+        return is_generalization_of(g.expr, c.expr)
+
+    # Condition
+    if g.__class__.__name__ == "Condition":
+        return is_generalization_of(g.expr, c.expr)
+
+    # Call
+    if g.__class__.__name__ == "Call":
+        return all(is_generalization_of(ga, ca) for ga, ca in zip(g.args, c.args))
+
+    # Store, Return 등 필요시 추가
+    return False
+
+
+def per_related(e1, e2) -> bool:
+    """
+    Partial Equivalence Relation check:
+    e1 R e2  ⇔  e1 ⪰ e2  ∨  e2 ⪰ e1
+    """
+    return (effect_generalization(e1, e2) or
+            effect_generalization(e2, e1))
+
 
 
 def simplify(expr: pe.IRExpr):
@@ -38,37 +160,117 @@ def simplify(expr: pe.IRExpr):
 #         return True
 #     return equal_z3(to_z3(expr1), to_z3(expr2))
 
-def equal(expr1: pe.IRExpr, expr2: pe.IRExpr) -> bool:
+def equal(expr1, expr2):
     """
-    Determines whether expr1 semantically generalizes or equals expr2.
-    - If expr1 is more abstract (contains AnySymbol), it may generalize expr2.
-    - Does not assume symmetry: equal(expr1, expr2) != equal(expr2, expr1)
+    구조-일반화(PER)·AnySymbol·Z3 논리적 동등성을 모두 고려하는 비교 함수.
     """
-    z3_expr1 = simplify_z3(to_z3(expr1))
-    z3_expr2 = simplify_z3(to_z3(expr2))
+    # 0. 껍데기 제거
+    expr1 = unwrap_const(expr1)
+    expr2 = unwrap_const(expr2)
 
-    # Quick path: syntactic equality
-    if z3_expr1.eq(z3_expr2):
+    # 1. 구조적 PER 먼저
+    if per_related(expr1, expr2):
         return True
 
-    # Generalization check: does expr1 (possibly with AnySymbol "T") cover expr2?
-    T_vars = [v for v in z3.z3util.get_vars(z3_expr1) if str(v) == "T"]
-    if T_vars:
-        solver = z3.Solver()
-        for T in T_vars:
-            for concrete in [0, 1, 2, 3]:
-                solver.push()
-                solver.add(T == z3.BitVecVal(concrete, 64))
-                solver.add(z3_expr1 != z3_expr2)
-                if solver.check() == z3.unsat:
-                    solver.pop()
-                    continue
-                solver.pop()
-                return False
+    # 2. AnySymbol 포함이면 무조건 매치(True)
+    if isinstance(expr1, AnySymbol) or isinstance(expr2, AnySymbol):
         return True
 
-    # Otherwise use semantic equivalence via SMT solving
-    return prove(z3_expr1 == z3_expr2)
+    # 3. Z3 동등성 확인
+    try:
+        eq = to_z3(expr1) == to_z3(expr2)
+        eq_simplified = z3.simplify(eq)
+        return prove(eq_simplified)
+    except Exception as ex:
+        print("Z3 convert error:", ex)
+        return False
+
+
+# def equal(expr1, expr2):
+#     """
+#     Rust Expr PartialEq의 동작을 반영:
+#     - AnySymbol이 한쪽에 있으면 무조건 True (와일드카드)
+#     - 리스트/구조체는 재귀적으로 비교
+#     - 값/타입이 다르면 False
+#     """
+#     expr1 = unwrap_const(expr1)
+#     expr2 = unwrap_const(expr2)
+
+#     # AnySymbol은 어떤 값과도 같다
+#     if isinstance(expr1, AnySymbol) or isinstance(expr2, AnySymbol):
+#         # partial equivalence relation 우선 확인
+#         # Effect 타입만 per_related 적용 (아니면 그냥 True)
+#         if isinstance(expr1, Effect) and isinstance(expr2, Effect):
+#             if per_related(expr1, expr2):
+#                 return True
+#         else:
+#             return True
+
+#     # 내부에 AnySymbol이 있는 pyvex expr/사용자 정의 객체도 True
+#     # (Unop, Binop, FakeRet 등)
+#     for e in (expr1, expr2):
+#         if hasattr(e, "args") and any(isinstance(arg, AnySymbol) for arg in getattr(e, "args", [])):
+#             # partial equivalence relation 우선 확인
+#             if isinstance(expr1, Effect) and isinstance(expr2, Effect):
+#                 if per_related(expr1, expr2):
+#                     return True
+#             else:
+#                 return True
+#         # FakeRet 등 사용자 정의 expr의 속성에 AnySymbol이 있으면 True
+#         if hasattr(e, "__dict__"):
+#             if any(isinstance(v, AnySymbol) for v in e.__dict__.values()):
+#                 if isinstance(expr1, Effect) and isinstance(expr2, Effect):
+#                     if per_related(expr1, expr2):
+#                         return True
+#                 else:
+#                     return True
+
+#     # 타입이 다르면 False
+#     if type(expr1) != type(expr2):
+#         return False
+
+#     # int, str은 값 비교
+#     if isinstance(expr1, (int, str)):
+#         return expr1 == expr2
+
+#     # 리스트는 길이와 각 원소 재귀 비교
+#     if isinstance(expr1, list):
+#         if not isinstance(expr2, list):
+#             return False
+#         if len(expr1) != len(expr2):
+#             return False
+#         for a, b in zip(expr1, expr2):
+#             if not equal(a, b):
+#                 return False
+#         return True
+
+#     # pyvex expr 등: op, args 비교
+#     if hasattr(expr1, "op") and hasattr(expr2, "op"):
+#         if getattr(expr1, "op", None) != getattr(expr2, "op", None):
+#             return False
+#         if hasattr(expr1, "args") and hasattr(expr2, "args"):
+#             if len(expr1.args) != len(expr2.args):
+#                 return False
+#             for a, b in zip(expr1.args, expr2.args):
+#                 if not equal(a, b):
+#                     return False
+#             return True
+#         return True
+
+#     # 사용자 정의 객체: __dict__ 비교
+#     if hasattr(expr1, "__dict__") and hasattr(expr2, "__dict__"):
+#         for k in expr1.__dict__:
+#             if k not in expr2.__dict__:
+#                 return False
+#             if not equal(expr1.__dict__[k], expr2.__dict__[k]):
+#                 return False
+#         for k in expr2.__dict__:
+#             if k not in expr1.__dict__:
+#                 return False
+#         return True
+
+#     # 마지막으로 z3로 동치성 확인
+#     return equal_z3(to_z3(expr1), to_z3(expr2))
 
 def show_equal(expr1: pe.IRExpr, expr2: pe.IRExpr) -> bool:
     if isinstance(expr1, int) or isinstance(expr1, str):
@@ -97,6 +299,69 @@ def to_z3(expr):
         print(f"Error converting {expr}:{type(expr)} : {e}")
         return z3.BitVecVal(0, 64)
 
+# def is_effect_instance(obj):
+#     """
+#     True  ⇔  obj 가 effect.py 안에 정의된 Effect.<Something> 중첩 클래스
+#     """
+#     return (obj.__class__.__module__ == "effect"         # 파일이 effect.py
+#             and obj.__class__.__qualname__.startswith("Effect."))
+
+# def to_z3(expr):
+#     """
+#     pyvex IRExpr / SymbolicValue → z3.BitVec / Bool 로 변환.
+#     AnySymbol 은 unconstrained BitVec 로, Uto64 는 ZeroExt 로 처리.
+#     """
+#     expr = unwrap_const(expr)
+
+#     # 0) Effect.*  (Put, Condition, Call, Store …)
+#     if isinstance(expr, Effect):
+#         return z3.BitVec(str(expr), 64)      # 이름만 갖는 64-bit 심볼
+    
+#     # ───────── AnySymbol ─────────
+#     if isinstance(expr, AnySymbol):
+#         return z3.BitVec(f"any_{id(expr)}", 64)
+
+#     # ───────── 심볼릭 값들 ────────
+#     if isinstance(expr, (ReturnSymbol, RegSymbol, MemSymbol)):
+#         return z3.BitVec(str(expr), 64)
+
+#     # ───────── 진짜 상수 ──────────
+#     if isinstance(expr, (pe.Const, pc.IRConst)) and not isinstance(expr, SymbolicValue):
+#         # pyvex.expr.Const      → expr.con
+#         # pyvex.const.IRConst   → expr._value
+#         raw = expr.con if hasattr(expr, "con") else expr._value
+
+#         # ⚠️ 문자열이면 BitVec 변수로 취급
+#         if isinstance(raw, int):
+#             return z3.BitVecVal(raw, 64)
+#         else:
+#             # e.g. "SR(48)" · "FakeRet(bn_get_top)"
+#             return z3.BitVec(str(raw), 64)
+        
+#     # Unary op (예: 1Uto64)
+#     if isinstance(expr, pe.Unop):
+#         inner = to_z3(expr.args[0])
+#         if expr.op.endswith("Uto64"):
+#             return z3.ZeroExt(32, inner)
+#         # 필요 시 다른 Unop 추가
+#         raise NotImplementedError(f"Unhandled Unop {expr.op}")
+
+#     # Binary op
+#     if isinstance(expr, pe.Binop):
+#         a, b = map(to_z3, expr.args)
+#         match expr.op:
+#             case "Iop_Add64" | "Add64":
+#                 return a + b
+#             case "Iop_Sub64" | "Sub64":
+#                 return a - b
+#             # 기타 연산 필요 시 추가
+#         raise NotImplementedError(f"Unhandled Binop {expr.op}")
+
+#     raise NotImplementedError(f"Unhandled expr type {type(expr)}")
+
+# def to_z3_true(expr):
+#     """z3 변환의 helper (이름만 유지)."""
+#     return to_z3(expr)
 
 def to_z3_true(expr: pe.IRExpr | pc.IRConst | int) -> z3.ExprRef:
     if isinstance(expr, AnySymbol):

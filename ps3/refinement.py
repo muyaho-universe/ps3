@@ -9,11 +9,14 @@ from simplify import simplify
 from node import Node
 from itertools import product
 from collections import deque
+from partail_eq import is_generalization_of
 
 
 def tree_possible_subs(tree: Node, fallback_effect: Effect) -> Iterator[Effect]:
+    print(f"tree_possible_subs(tree{tree.print()})")
     # 각 노드에서 가능한 대체 표현을 재귀적으로 생성
     def helper(node: Node) -> list[Node]:
+        print(f"helper(node{node.label})")
         # 자식이 없는 리프 노드인 경우: 자신 그대로, 그리고 T로 대체
         if not node.children:
             return [deepcopy(node), Node("Const: T", level=node.level)]
@@ -36,6 +39,7 @@ def tree_possible_subs(tree: Node, fallback_effect: Effect) -> Iterator[Effect]:
 
     # 전체 트리에서 가능한 대체 트리 생성
     candidates = helper(tree)
+    print("helper done")
     sorted_candidates = sorted(candidates, key=abstraction_score) # [1:] # 가장 추상화된 트리는 제외 (T로만 구성된 트리)
 
     # 각 트리를 effect로 변환 (불가능한 경우 fallback 사용)
@@ -74,6 +78,7 @@ def refine_one(myself: list[InspectInfo], other: list[InspectInfo]) -> list[Insp
         temp = []
         count = 0
         go = True
+        print("go into other with info:", info)
         root = effect_to_node(info.ins)
         for generalized_tree in tree_possible_subs(root, fallback_effect=effect):
             # try:
@@ -84,19 +89,26 @@ def refine_one(myself: list[InspectInfo], other: list[InspectInfo]) -> list[Insp
             new_effect = generalized_tree   
             new_info = InspectInfo(new_effect)
             temp.append(new_info)
-            if count < 2  and  isinstance(effect, Effect.Put):
+
+            # if isinstance(new_info.ins, Effect.Call):
+
+            # if count < 2  and  isinstance(effect, Effect.Put):
                 
-                count += 1
-            else:
+            #     count += 1
+            # else:
                 
-                if str(new_info) == "Put: 32 = FakeRet(T) + T":
-                    for item in other:
-                        if str(item) == "Put: 32 = 2 + FakeRet(bn_get_top)":
-                            print(f"Found: {new_info} and {item}, new_info == item {new_info == item}")
-                            exit(1)
-                if go and new_info not in other:
-                    myself[i] = new_info
-                    go = False
+            # if str(new_info) == "Put: 32 = 1 + T":
+            #     # for item in other:
+            #     #     if str(item) == "Put: 32 = 2 + FakeRet(bn_get_top)":
+            #     print("other:", other) # Put: 64 = 2 + FakeRet(bn_get_top), Put: 32 = 2 + FakeRet(bn_get_top), Call: bn_wexpand(FakeRet(BN_CTX_get), 2 + FakeRet(bn_get_top))
+            #     print(f"Found: {new_info}, new_info in other: {new_info in other}") # False
+            #     # print(f"type(new_info.ins.expr.args[0]): {type(new_info.ins.expr.args[0])}")
+            #     # print(f"type(item.ins.expr.args[0]): {type(item.ins.expr.args[0])} {item.ins.expr.args[0]}")
+            #     exit(1)
+            print("go into other with new_info:", new_info)
+            if go and new_info not in other:
+                myself[i] = new_info
+                go = False
                     # break  # 다른 효과와 겹치지 않는 첫 번째 generalized_tree를 찾으면 중단
 
                 
@@ -142,6 +154,48 @@ def refine_sig(vuln_effect: list[InspectInfo], patch_effect: list[InspectInfo]) 
     exit(1)
     return vuln_effect, patch_effect   
 
+def simplify_addr_expr(expr):
+    """
+    연속된 Sub64/Add64의 상수 부분을 모두 누적해서 단순화.
+    예: Sub64(Sub64(Sub64(SR(48), 8) + 8) + 8) → Sub64(SR(48), 8*n)
+    """
+    base = expr
+    total = 0
+    sign = 1
+    while isinstance(base, Binop):
+        if base.op == "Iop_Sub64":
+            left, right = base.args
+            # 오른쪽이 상수면 누적
+            if isinstance(right, (Const, int)):
+                val = right.con if isinstance(right, Const) else right
+                # pyvex U64/U32 등은 .value, 아니면 int 변환
+                if hasattr(val, "value"):
+                    val = val.value
+                val = int(val)
+                total += sign * val
+                base = left
+                sign = 1
+            else:
+                break
+        elif base.op == "Iop_Add64":
+            left, right = base.args
+            if isinstance(right, (Const, int)):
+                val = right.con if isinstance(right, Const) else right
+                if hasattr(val, "value"):
+                    val = val.value
+                val = int(val)
+                total += sign * val
+                base = left
+            else:
+                break
+        else:
+            break
+    # base가 더 이상 Binop이 아니면, 누적된 상수와 함께 재구성
+    if total == 0:
+        return base
+    else:
+        return Binop("Iop_Sub64", [base, Const(total)])
+
 def simplify_effects(effects: list[InspectInfo]) -> list[InspectInfo]:
     for effect in effects:
         if isinstance(effect.ins, Effect.Call):
@@ -156,7 +210,8 @@ def simplify_effects(effects: list[InspectInfo]) -> list[InspectInfo]:
         elif isinstance(effect.ins, Effect.Put):
             effect.ins.expr = simplify_expr(effect.ins.expr)
         elif isinstance(effect.ins, Effect.Store):
-            effect.ins.addr = simplify_expr(effect.ins.addr)
+            # 여기서 addr을 추가로 단순화
+            effect.ins.addr = simplify_addr_expr(simplify_expr(effect.ins.addr))
             effect.ins.expr = simplify_expr(effect.ins.expr)
     return effects
 

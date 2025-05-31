@@ -53,30 +53,50 @@ class InspectInfo:
     #             assert False, "Not implemented"
     #     return False
 
-    def __eq__(self, __o: object) -> bool:
+    # def __eq__(self, __o: object) -> bool:
         
-        if not isinstance(__o, InspectInfo):
+    #     if not isinstance(__o, InspectInfo):
+    #         return False
+    #     # if isinstance(self.ins, )
+    #     if isinstance(self.ins, Effect.Call) and isinstance(__o.ins, Effect.Call):
+    #         # return self.ins == __o.ins
+    #         return self.ins.name == __o.ins.name and all(simplify.equal(a, b) for a, b in zip(self.ins.args, __o.ins.args))
+    #     elif isinstance(self.ins, Effect.Condition) and isinstance(__o.ins, Effect.Condition):
+    #         # return self.ins == __o.ins
+    #         # print(f"Comparing {self}:{type(self.ins.expr)} with {__o} in InspectInfo.__eq__")
+    #         return simplify.equal(self.ins.expr, __o.ins.expr)
+    #     elif isinstance(self.ins, Effect.Return) and isinstance(__o.ins, Effect.Return):
+    #         return simplify.equal(self.ins.expr, __o.ins.expr)
+    #         # return self.ins == __o.ins
+    #     elif isinstance(self.ins, Effect.Put) and isinstance(__o.ins, Effect.Put):
+    #         return self.ins.reg == __o.ins.reg and simplify.equal(self.ins.expr, __o.ins.expr)
+    #         # return self.ins == __o.ins
+    #     elif isinstance(self.ins, Effect.Store) and isinstance(__o.ins, Effect.Store):
+    #         return simplify.equal(self.ins.addr, __o.ins.addr) and simplify.equal(self.ins.expr, __o.ins.expr)
+    #         # return self.ins == __o.ins
+    #     else:
+    #         return False
+    def __eq__(self, other):
+        if not isinstance(other, InspectInfo):
             return False
-        # if isinstance(self.ins, )
-        if isinstance(self.ins, Effect.Call) and isinstance(__o.ins, Effect.Call):
-            # return self.ins == __o.ins
-            return self.ins.name == __o.ins.name and all(simplify.equal(a, b) for a, b in zip(self.ins.args, __o.ins.args))
-        elif isinstance(self.ins, Effect.Condition) and isinstance(__o.ins, Effect.Condition):
-            # return self.ins == __o.ins
-            # print(f"Comparing {self}:{type(self.ins.expr)} with {__o} in InspectInfo.__eq__")
-            return simplify.equal(self.ins.expr, __o.ins.expr)
-        elif isinstance(self.ins, Effect.Return) and isinstance(__o.ins, Effect.Return):
-            return simplify.equal(self.ins.expr, __o.ins.expr)
-            # return self.ins == __o.ins
-        elif isinstance(self.ins, Effect.Put) and isinstance(__o.ins, Effect.Put):
-            return self.ins.reg == __o.ins.reg and simplify.equal(self.ins.expr, __o.ins.expr)
-            # return self.ins == __o.ins
-        elif isinstance(self.ins, Effect.Store) and isinstance(__o.ins, Effect.Store):
-            return simplify.equal(self.ins.addr, __o.ins.addr) and simplify.equal(self.ins.expr, __o.ins.expr)
-            # return self.ins == __o.ins
-        else:
-            return False
+        # 오직 PER만 사용!
+        return simplify.per_related(self.ins, other.ins)
 
+    def _z3_equal(self, a, b):
+        # strict semantic equivalence
+        if type(a) != type(b):
+            return False
+        if isinstance(a, Effect.Put):
+            return a.reg == b.reg and simplify.equal(a.expr, b.expr)
+        if isinstance(a, Effect.Call):
+            return a.name == b.name and all(simplify.equal(x, y) for x, y in zip(a.args, b.args))
+        if isinstance(a, Effect.Condition) or isinstance(a, Effect.Return):
+            return simplify.equal(a.expr, b.expr)
+        if isinstance(a, Effect.Store):
+            return simplify.equal(a.addr, b.addr) and simplify.equal(a.expr, b.expr)
+        return False
+    
+    
     # def show_eq(self, other):
     #     if isinstance(other, InspectInfo):
     #         if isinstance(self.ins, tuple) and isinstance(other.ins, tuple):

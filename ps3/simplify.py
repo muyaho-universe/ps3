@@ -99,7 +99,6 @@ def effect_generalization(g, c):
 
     # Put 예시
     if g.__class__.__name__ == "Put":
-        # 실제 필드명에 맞추세요 (reg / offset / dst 등)
         dst_g = getattr(g, "reg", getattr(g, "offset", None))
         dst_c = getattr(c, "reg", getattr(c, "offset", None))
         if dst_g != dst_c:
@@ -112,7 +111,11 @@ def effect_generalization(g, c):
 
     # Call
     if g.__class__.__name__ == "Call":
-        return all(is_generalization_of(ga, ca) for ga, ca in zip(g.args, c.args))
+        # 각 인자 쌍이 한쪽이 다른 쪽을 일반화하거나, 반대도 일반화하면 True
+        return all(
+            is_generalization_of(ga, ca) or is_generalization_of(ca, ga)
+            for ga, ca in zip(g.args, c.args)
+        )
 
     # Store, Return 등 필요시 추가
     return False
@@ -236,7 +239,7 @@ def equal(expr1, expr2) -> bool:
         # print(f"expr2 contains AnySymbol: {contains_anysymbol(expr2)}")
         # 1. 구조적 PER 먼저 (refine 부터 AnySymbol이 있을 수 있으므로 이때부터는 구조적 PER)
         if contains_anysymbol(expr1) or contains_anysymbol(expr2):
-            print("Using per_related due to AnySymbol presence")
+            # print("Using per_related due to AnySymbol presence")
             return per_related(expr1, expr2)
         else:
             if isinstance(expr1, Effect.Call) and isinstance(expr2, Effect.Call):

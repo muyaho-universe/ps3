@@ -1,6 +1,6 @@
 from effect import Effect
 from pyvex.expr import IRExpr, Binop, Const, Unop, Load, IRConst, ITE, CCall, RdTmp, Get
-from symbol_value import AnySymbol, RegSymbol, ReturnSymbol, MemSymbol, SymbolicValue
+from symbol_value import AnySymbol, RegSymbol, ReturnSymbol, MemSymbol, SymbolicValue, WildCardSymbol
 import pyvex.const as pc
 from inspect_info import InspectInfo
 from typing import Iterator
@@ -10,6 +10,7 @@ from node import Node
 from itertools import product
 from collections import deque
 from partail_eq import is_generalization_of
+import re
 
 
 def tree_possible_subs(tree: Node, fallback_effect: Effect) -> Iterator[Effect]:
@@ -88,7 +89,7 @@ def refine_one(myself: list[InspectInfo], other: list[InspectInfo]) -> list[Insp
             #     exit(1)
             new_effect = generalized_tree   
             new_info = InspectInfo(new_effect)
-            temp.append(new_info)
+            # temp.append(new_info)
 
             # if isinstance(new_info.ins, Effect.Call):
 
@@ -96,8 +97,8 @@ def refine_one(myself: list[InspectInfo], other: list[InspectInfo]) -> list[Insp
                 
             #     count += 1
             # else:
-            t = "Put: 32 = T + FakeRet(T)"
-            t2 = "Put: 32 = 2 + FakeRet(bn_get_top)"
+            t = "Call: bn_wexpand(FakeRet(T), T)"
+            t2 = "Call: bn_wexpand(T, 1 + T)"
             # print(f"new_info: {new_info} {str(new_info) == t }") # Put: 32 = 2 + FakeRet(bn_get_top)
             # if str(new_info) == t:
             #     print(other)
@@ -119,10 +120,7 @@ def refine_one(myself: list[InspectInfo], other: list[InspectInfo]) -> list[Insp
             #             # print(f"type({item.ins.expr.args[1].con}): {type(item.ins.expr.args[1].con)}") # <class 'inspect_info.InspectInfo'>
             #             print(f"new_info == item: {new_info == item}") # True
             #             print("==========RALO==========")
-            #             if go:
-            #                 go = False
-            #             else:
-            #                 exit(1)
+            #             exit(1)
 
             # if str(new_info) == "Put: 32 = 1 + FakeRet(T)":
             #     for item in other:
@@ -150,15 +148,15 @@ def refine_one(myself: list[InspectInfo], other: list[InspectInfo]) -> list[Insp
             # print("go into other with new_info:", new_info)
 
             if go and new_info not in other :
-                print(f"refine_one: {new_info} not in other {other}")
+                # print(f"refine_one: {new_info} not in other {other}")
                 myself[i] = new_info
                 go = False
-                    # break  # 다른 효과와 겹치지 않는 첫 번째 generalized_tree를 찾으면 중단
+                break  # 다른 효과와 겹치지 않는 첫 번째 generalized_tree를 찾으면 중단
 
                 
         
-        result.append(temp)
-    print(f"refine result: {result}")
+        # result.append(temp)
+    # print(f"refine result: {result}")
     return myself 
 
 
@@ -170,7 +168,7 @@ def refine_sig(vuln_effect: list[InspectInfo], patch_effect: list[InspectInfo]) 
     # print(f"old_vuln_effect: {old_vuln_effect}")
     # print(f"rebuild vuln_effect: {vuln_effect}")
     # print(f"same: {old_vuln_effect == vuln_effect}")
-    assert vuln_effect == old_vuln_effect, "Rebuild failed for vuln_effect"
+    assert vuln_effect == old_vuln_effect, f"Rebuild failed for vuln_effect {vuln_effect}\n!=\n {old_vuln_effect}"
     assert patch_effect == old_patch_effect, "Rebuild failed for patch_effect"
     # exit(1)
     # vuln_effect = simplify_effects(vuln_effect)
@@ -190,58 +188,225 @@ def refine_sig(vuln_effect: list[InspectInfo], patch_effect: list[InspectInfo]) 
     
     print(f"old_vuln_effect: {old_vuln_effect}")
     print(f"vuln_effect: {vuln_effect}")
+    print("-" * 50)
+    patch_effect = refine_one(patch_effect, vuln_effect)
+    print(f"old_patch_effect: {old_patch_effect}")
+    print(f"patch_effect: {patch_effect}")
     print("=" * 50)
-    # patch_effect = refine_one(patch_effect, vuln_effect)
-    # print(f"old_patch_effect: {old_patch_effect}")
-    # print(f"patch_effect: {patch_effect}")
-    # print("=" * 50)
 
-    # for i in (0, 1):
-    #     if isinstance(vuln_effect[i][0].ins, Effect.Put):
-    #         print(f"vuln_effect[{i}]: {vuln_effect[i]}")
-    #         print(f"vuln_effect[{i}][1].ins: {vuln_effect[i][1].ins.expr}, type: {type(vuln_effect[i][1].ins.expr)}")
-    #         print(f"vuln_effect[{i}][3].ins: {vuln_effect[i][2].ins.expr}, type: {type(vuln_effect[i][3].ins.expr)}")
     
-    exit(1)
+    # exit(1)
     return vuln_effect, patch_effect 
+
+def parse_expr(expr_str):
+    expr_str = expr_str.strip()
+
+    # Helper: 괄호 매칭으로 내부 추출
+    def extract_inner(s, prefix):
+        assert s.startswith(prefix)
+        depth = 0
+        for i in range(len(prefix), len(s)):
+            if s[i] == '(':
+                depth += 1
+            elif s[i] == ')':
+                if depth == 0:
+                    return s[len(prefix):i]
+                depth -= 1
+        # fallback: 마지막 )까지
+        return s[len(prefix):-1]
+
+    # FakeRet
+    if expr_str.startswith("FakeRet(") and expr_str.endswith(")"): 
+        inner = extract_inner(expr_str, "FakeRet(").strip()
+        parsed = parse_expr(inner)
+        if isinstance(parsed, ReturnSymbol):
+            return parsed
+        return ReturnSymbol(parsed)
+    if expr_str == "FakeRet":
+        return ReturnSymbol(None)
+    # Mem
+    if expr_str.startswith("Mem(") and expr_str.endswith(")"):
+        inner = extract_inner(expr_str, "Mem(").strip()
+        addr = parse_expr(inner)
+        return MemSymbol(addr)
+    # SR
+    if expr_str.startswith("SR(") and expr_str.endswith(")"):
+        inner = extract_inner(expr_str, "SR(").strip()
+        # 숫자면 int, 아니면 재귀 파싱
+        try:
+            return RegSymbol(int(inner))
+        except ValueError:
+            return RegSymbol(parse_expr(inner))
+    # WildCard
+    if expr_str == "WildCard":
+        return WildCardSymbol()
+    # T (AnySymbol)
+    if expr_str == "T":
+        return AnySymbol()
+    # If
+    if expr_str.startswith("If(") and expr_str.endswith(")"):
+        # 괄호 매칭으로 내부 추출
+        inner = expr_str[3:-1]
+        args = []
+        depth = 0
+        last = 0
+        for i, ch in enumerate(inner):
+            if ch == '(':
+                depth += 1
+            elif ch == ')':
+                depth -= 1
+            elif ch == ',' and depth == 0:
+                args.append(inner[last:i].strip())
+                last = i+1
+        args.append(inner[last:].strip())
+        if len(args) != 3:
+            raise ValueError(f"If() must have 3 arguments: {expr_str}")
+        # print(f"parse_expr: If() args[0]: {args[0]}")
+        ret = ITE(parse_expr(args[0]), parse_expr(args[2]), parse_expr(args[1]))
+        # print(f"parse_expr: ITE found: ITE:{ret}, InsepctInfo: {InspectInfo(Effect.Condition(ret))}")
+        return ret
+        # return ITE(parse_expr(args[0]), parse_expr(args[1]), parse_expr(args[2]))
+
+    # Binop: 가장 바깥의 +만 분리
+    # 연산자 우선순위: 괄호 깊이 0에서 오른쪽부터 차례로 분리
+    # Binop: 괄호 깊이 0에서 연산자 분리
+    binops = [
+        (" == ", "Iop_CmpEQ64"),
+        (" != ", "Iop_CmpNE64"),
+        (" <= ", "Iop_CmpLE64S"),
+        (" >= ", "Iop_CmpGE64S"),
+        (" < ", "Iop_CmpLT64S"),
+        (" > ", "Iop_CmpGT64S"),
+        (" | ", "Iop_Or64"),
+        (" ^~ ", "Iop_XorNot64"),
+        (" ^ ", "Iop_Xor64"),
+        (" + ", "Iop_Add64"),
+        (" - ", "Iop_Sub64"),
+    ]
+    for op_str, op_name in binops:
+        depth = 0
+        for i in range(len(expr_str) - len(op_str) + 1):
+            if expr_str[i] == '(':
+                depth += 1
+            elif expr_str[i] == ')':
+                depth -= 1
+            elif expr_str[i:i+len(op_str)] == op_str and depth == 0:
+                left = expr_str[:i]
+                right = expr_str[i+len(op_str):]
+
+                # left_expr = parse_expr(left)
+                # right_expr = parse_expr(right)
+
+                # if not isinstance(left_expr, IRExpr):
+                #     left_expr = Unop("Iop_64to32", [left_expr])
+                # if not isinstance(right_expr, IRExpr):
+                #     right_expr = Unop("Iop_64to32", [right_expr])
+
+                # ret = Binop(op_name, [left_expr, right_expr])
+                # print(f"parse_expr: Binop found: {op_name} with left: {left} and right: {right} and ret: {ret}")
+                ret = Binop(op_name, [parse_expr(left), parse_expr(right)])
+                # print(f"parse_expr: Binop found: {op_name} with left: {left} and right: {right} and ret: {ret}")
+                # return Binop(op_name, [parse_expr(left), parse_expr(right)])
+                return ret
+
+    # 단항 연산자: ~
+    if expr_str.startswith("~"):
+        rest = expr_str[1:].lstrip()
+        if rest.startswith("("):
+            # 괄호 매칭으로 ~() 전체를 추출
+            depth = 0
+            for i, ch in enumerate(rest):
+                if ch == '(':
+                    depth += 1
+                elif ch == ')':
+                    depth -= 1
+                    if depth == 0:
+                        # i는 닫는 괄호 위치
+                        inner = rest[1:i]
+                        after = rest[i+1:].strip()
+                        # ~(...) 뒤에 또 연산자가 붙을 수도 있으니, after가 있으면 재귀 파싱
+                        if after:
+                            # ~(...)뒤에 연산자가 붙는 경우: ~(...) | ... 등
+                            return parse_expr(f"~({inner}) {after}")
+                        return Unop("Iop_Not64", [parse_expr(inner)])
+            # 괄호가 안 맞으면 그냥 전체를 넘김
+            return Unop("Iop_Not64", [parse_expr(rest)])
+        else:
+            return Unop("Iop_Not64", [parse_expr(rest)])
+
+    # int
+    if expr_str.isdigit():
+        return Const(int(expr_str))
+
+    # 알파벳, 언더스코어 등으로만 이루어진 경우(심볼)
+    if re.match(r"^[A-Za-z_][A-Za-z0-9_]*$", expr_str):
+        return expr_str
+
+    # 함수형 연산자: Concat, Extract, Subpiece, ZeroExt 등
+    for func in ["Concat", "Extract", "Subpiece", "ZeroExt"]:
+        if expr_str.startswith(f"{func}(") and expr_str.endswith(")"):
+            inner = expr_str[len(func) + 1:-1]
+            args = []
+            depth = 0
+            last = 0
+            for i, ch in enumerate(inner):
+                if ch == '(':
+                    depth += 1
+                elif ch == ')':
+                    depth -= 1
+                elif ch == ',' and depth == 0:
+                    args.append(inner[last:i].strip())
+                    last = i + 1
+            args.append(inner[last:].strip())
+            # 각 함수에 맞는 pyvex 표현으로 변환
+            if func == "Concat":
+                return CCall("Iop_Concat", [parse_expr(a) for a in args])
+            elif func == "Extract":
+                return CCall("Ity_I64", "Iop_Extract64", [parse_expr(a) for a in args])
+            elif func == "Subpiece":
+                return CCall("Ity_I64", "Iop_Subpiece64", [parse_expr(a) for a in args])
+            elif func == "ZeroExt":
+                return CCall("Ity_I64", "Iop_ZeroExt64", [parse_expr(a) for a in args])
+
+    raise ValueError(f"parse_expr: 파싱 실패: {expr_str}")
 
 def rebuild_effects(effect: InspectInfo) -> InspectInfo:
     """
     InspectInfo를 받아서, str 형태 그대로 최소화된 effect로 변환합니다.
-    예: "Put: 32 = 2 + FakeRet(bn_get_top)" → Effect.Put(32, Binop("Iop_Add64", [Const(2), ReturnSymbol("bn_get_top")]))
     """
-    original_str = str(effect)
+    original_str = str(effect).strip().replace('\n', '')
+    # temp = "Condition: If(FakeRet == 0, 0, 1)"
+    # if original_str == temp:
+    #     print(f"effect.ins.expr.cond: {effect.ins.expr.args[0].args[0].args[0].args[0].args[0].args[0].con.name}, type: {type(effect.ins.expr.args[0].args[0].args[0].args[0].args[0].args[0].con.name)}")
+    #     exit(1)
+    concat = "Concat"
+    hat = "^"
+    if concat in original_str or hat in original_str:
+        # Concat이나 ^가 있는 경우는 처리하지 않음
+        return effect
     if "Put: " in original_str:
-        # Put 효과를 처리
         parts = original_str.split(" = ")
         reg_part = parts[0].replace("Put: ", "").strip()
         expr_part = parts[1].strip()
-
-        # reg 부분에서 숫자만 추출
         reg = int(reg_part)
-
-        # expr 부분을 Binop으로 변환
-        if " + " in expr_part:
-            left, right = expr_part.split(" + ")
-            left = Const(int(left.strip())) if left.isdigit() else ReturnSymbol(left.strip().split("FakeRet(")[-1].split(")")[0].strip())
-            right = Const(int(right.strip())) if right.isdigit() else ReturnSymbol(right.strip().split("FakeRet(")[-1].split(")")[0].strip())
-            expr = Binop("Iop_Add64", [left, right])
-        else:
-            expr = ReturnSymbol(expr_part)
-
-        return InspectInfo(Effect.Put(reg, expr))
+        expr = parse_expr(expr_part)
+        ret = InspectInfo(Effect.Put(reg, expr))
+        if original_str != str(ret):
+            print(f"Rebuild failed for Put: {original_str} != {str(ret)}")
+            exit(1)
+        return ret
     elif "Call: " in original_str:
-        # Call 효과를 처리
-        # 예: Call: bn_wexpand(FakeRet(BN_CTX_get), 1 + FakeRet(bn_get_top))
-        parts = original_str.split("(", 1)
-        name = parts[0].replace("Call: ", "").strip()
-        args_part = parts[1].rstrip(")").strip()
-
+        # Call: name(arg1, arg2, ...)
+        m = re.match(r"Call: ([^(]+)\((.*)\)", original_str)
+        if not m:
+            raise ValueError(f"Cannot parse Call: {original_str}")
+        name = m.group(1).strip()
+        args_str = m.group(2).strip()
         # 괄호 깊이 기반 인자 분리
         args = []
         current = ""
         depth = 0
-        for ch in args_part:
+        for ch in args_str:
             if ch == "," and depth == 0:
                 if current.strip():
                     args.append(current.strip())
@@ -254,53 +419,39 @@ def rebuild_effects(effect: InspectInfo) -> InspectInfo:
                 current += ch
         if current.strip():
             args.append(current.strip())
-
-        # 각 인자를 재귀적으로 파싱
-        def parse_arg(arg):
-            arg = arg.strip()
-            # Binop: "1 + FakeRet(bn_get_top)"
-            if " + " in arg:
-                left, right = arg.split(" + ", 1)
-                left = Const(int(left.strip())) if left.strip().isdigit() else ReturnSymbol(left.strip().split("FakeRet(")[-1].split(")")[0].strip()) if "FakeRet(" in left else ReturnSymbol(left.strip())
-                right = Const(int(right.strip())) if right.strip().isdigit() else ReturnSymbol(right.strip().split("FakeRet(")[-1].split(")")[0].strip()) if "FakeRet(" in right else ReturnSymbol(right.strip())
-                return Binop("Iop_Add64", [left, right])
-            elif "FakeRet(" in arg:
-                return ReturnSymbol(arg.split("FakeRet(")[-1].split(")")[0].strip())
-            elif arg.isdigit():
-                return Const(int(arg))
-            else:
-                return ReturnSymbol(arg)
-        args = [parse_arg(a) for a in args]
-        return InspectInfo(Effect.Call(name, args))
+        args = [parse_expr(a) for a in args]
+        ret = InspectInfo(Effect.Call(name, args))
+        if original_str != str(ret):
+            print(f"Rebuild failed for Call: {original_str} != {str(ret)}")
+            exit(1)
+        return ret
     elif "Condition: " in original_str:
-        # Condition 효과를 처리
         expr_part = original_str.replace("Condition: ", "").strip()
-        expr = Const(int(expr_part)) if expr_part.isdigit() else ReturnSymbol(expr_part.split("FakeRet(")[-1].split(")")[0].strip())
-        return InspectInfo(Effect.Condition(expr))
+        expr = parse_expr(expr_part)
+        ret = InspectInfo(Effect.Condition(expr))
+        if original_str != str(ret):
+            print(f"Rebuild failed for Condition: {original_str} != {str(ret)}")
+            exit(1)
+        return ret
     elif "Return: " in original_str:
-        # Return 효과를 처리
         expr_part = original_str.replace("Return: ", "").strip()
-        expr = Const(int(expr_part)) if expr_part.isdigit() else ReturnSymbol(expr_part.split("FakeRet(")[-1].split(")")[0].strip())
-        return InspectInfo(Effect.Return(expr))
+        expr = parse_expr(expr_part)
+        ret = InspectInfo(Effect.Return(expr))
+        if original_str != str(ret):
+            print(f"Rebuild failed for Return: {original_str} != {str(ret)}")
+            exit(1)
+        return ret
     elif "Store: " in original_str:
-        # Store 효과를 처리
         parts = original_str.split(" = ")
         addr_part = parts[0].replace("Store: ", "").strip()
         expr_part = parts[-1].strip()
-
-        # addr 부분을 Const 또는 ReturnSymbol로 변환
-        if " + " in addr_part:
-            left, right = addr_part.split(" + ")
-            left = Const(int(left.strip())) if left.isdigit() else ReturnSymbol(left.strip().split("FakeRet(")[-1].split(")")[0].strip())
-            right = Const(int(right.strip())) if right.isdigit() else ReturnSymbol(right.strip().split("FakeRet(")[-1].split(")")[0].strip())
-            addr = Binop("Iop_Add64", [left, right])
-        else:
-            addr = ReturnSymbol(addr_part)
-
-        # expr 부분을 Const 또는 ReturnSymbol로 변환
-        expr = Const(int(expr_part)) if expr_part.isdigit() else ReturnSymbol(expr_part.split("FakeRet(")[-1].split(")")[0].strip())
-
-        return InspectInfo(Effect.Store(addr, expr))
+        addr = parse_expr(addr_part)
+        expr = parse_expr(expr_part)
+        ret = InspectInfo(Effect.Store(addr, expr))
+        if original_str != str(ret):
+            print(f"Rebuild failed for Store: {original_str} != {str(ret)}")
+            exit(1)
+        return ret
     else:
         print(f"Unknown effect format: {original_str}")
         exit(1)
@@ -434,6 +585,11 @@ def expr_to_node(expr, level=0) -> Node:
         return Node(f"ReturnSymbol", [expr_to_node(expr.name, level + 1)], level=level)
     elif isinstance(expr, (pc.F32, pc.F64, pc.U1, pc.U8, pc.U16, pc.U32, pc.U64)):
         return Node(f"IRConst: {expr.value}", level=level)
+       
+    elif isinstance(expr, CCall):
+        # 함수명과 타입을 노드에 기록, 인자들은 자식 노드로
+        return Node(f"CCall({expr.cee}:{expr.retty})", [expr_to_node(arg, level + 1) for arg in expr.args], level)
+        
     else:
         return Node(f"[UNKNOWN expr] {expr} ({type(expr).__name__})", level=level)
 
@@ -476,7 +632,7 @@ def node_to_expr(node: Node):
         cond = node_to_expr(node.children[0])
         iftrue = node_to_expr(node.children[1])
         iffalse = node_to_expr(node.children[2])
-        return ITE(cond, iftrue, iffalse)
+        return ITE(cond, iffalse, iftrue)  # pyvex는 iftrue, iffalse 순서가 반대임에 유의
 
     elif node.label.startswith("Get(offset="):
         offset = int(node.label[len("Get(offset="):-1])
@@ -517,6 +673,13 @@ def node_to_expr(node: Node):
             value = value_str
         # 기본적으로 U64로 복원한다고 가정 (실제 타입 보존하려면 node.meta 필요)
         return pc.U64(value)  # 또는 pc.U32(value) 등 필요에 따라
+    
+    elif node.label.startswith("CCall("):
+        # 예: CCall(Iop_Concat:Ity_I64)
+        label = node.label[len("CCall("):-1]
+        cee, retty = label.split(":")
+        args = [node_to_expr(child) for child in node.children]
+        return CCall(retty, cee, args)
 
     else:
         raise ValueError(f"Unknown node label: {node.label}")

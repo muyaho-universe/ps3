@@ -13,10 +13,47 @@ def expr_to_str(expr):
         return str(expr.con)
     
     if isinstance(expr, Binop):
-        op = expr.op.split("_")[-1]  # 예: Iop_Add64 → Add64
+        op_map = {
+            "Iop_Add64": "+",
+            "Iop_Sub64": "-",
+            "Iop_CmpEQ64": "==",
+            "Iop_CmpLE64U": "<=",
+            "Iop_Add32": "+",
+            "Iop_Sub32": "-",
+            "Iop_CmpEQ32": "==",
+            "Iop_CmpLE32U": "<=",
+            "Iop_CmpLT64U": "<",
+            "Iop_CmpLT32U": "<",
+            "Iop_CmpGT64U": ">",
+            "Iop_CmpGT32U": ">",
+            "Iop_CmpGE64U": ">=",
+            "Iop_CmpGE32U": ">=",
+            "Iop_CmpNE64": "!=",
+            "Iop_CmpNE32": "!=",
+            "Iop_Mul64": "*",
+            "Iop_Mul32": "*",
+            "Iop_And64": "&",
+            "Iop_And32": "&",
+            "Iop_Or64": "|",
+            "Iop_Or32": "|",
+            "Iop_Xor64": "^",
+            "Iop_Xor32": "^",
+            "Iop_Shl64": "<<",
+            "Iop_Shl32": "<<",
+            "Iop_Shr64": ">>",
+            "Iop_Shr32": ">>",
+            "Iop_Sar64": ">>",
+            "Iop_Sar32": ">>",
+
+            # ... 필요한 연산자 추가 ...
+        }
         left = expr_to_str(expr.args[0])
         right = expr_to_str(expr.args[1])
-        return f"{left} + {right}" if "Add" in op else f"{op}({left}, {right})"
+        op_str = op_map.get(expr.op, expr.op)
+        if op_str in {"+", "-", "==", "<="}:
+            return f"({left} {op_str} {right})"
+        else:
+            return f"{op_str}({left}, {right})"
 
     if isinstance(expr, Unop):
         return f"{expr.op}({expr_to_str(expr.args[0])})"

@@ -13,7 +13,8 @@ from symbol_value import WildCardSymbol
 import time
 import lief
 from settings import *
-from refinement import refine_sig
+from refinement import refine_sig, rebuild_effects
+from copy import deepcopy
 
 
 class FunctionNotFound(Exception):
@@ -739,6 +740,7 @@ class Test:
 
     def test_func(self, funcname: str, simulator: Simulator, sigs: list[Signature]) -> str:
         dic = {}
+        refined = False
         for sig in sigs:
             dic.update(handle_pattern(sig.patterns))
             # print(f'{sig.funcname} {sig.state} {sig.patterns}') # ssl3_get_record modify [Patterns(patterns=[]), Patterns(patterns=[])]
@@ -777,6 +779,7 @@ class Test:
                     # TODO: 여기서 refinement
                     if vuln_effect != [] and patch_effect != []:    
                         vuln_effect, patch_effect = refine_sig(vuln_effect, patch_effect)
+                        refined = True
                     sig.sig_dict["add"] = patch_effect
                     sig.sig_dict["remove"] = vuln_effect
                 else:
@@ -798,6 +801,18 @@ class Test:
             # logger.info(f"patch_effect: {patch_effect}")
             vuln_match, patch_match = [], []
             all_effects = extrace_effect(traces)
+            all_effects = list(set(all_effects))
+            if refined:
+                old_effects = deepcopy(all_effects)
+                # temp = []
+                # for i in all_effects:
+                #     print(f"refined i: {i}")
+                #     a = rebuild_effects(i)
+                #     print(f"refined a: {a}")
+                #     temp.append(a)
+                # all_effects = temp
+                all_effects = [rebuild_effects(e) for e in all_effects]
+                assert all_effects == old_effects, f"all_effects {all_effects} != old_effects {old_effects}"
             # logger.info(f"all_effects: {set(all_effects)}")
             # logger.info(f"all_effects: {sorted(str(InspectInfo(i)) for i in all_effects)}")
             # exit(0)

@@ -36,6 +36,14 @@ def is_generalization_of(g, c, depth=0):
     tab = "  " * depth  # indent for debugging
     g = unwrap_const(g)
     c = unwrap_const(c)
+    if isinstance(g, pe.Const) and isinstance(c, int):
+        # Const는 int로 취급
+        g = g.con
+
+    if isinstance(c, pe.Const) and isinstance(g, int):
+        # Const는 int로 취급
+        c = c.con
+    # print(f"{tab}RALO: {type(g)} {g} vs {type(c)} {c} (depth={depth})")    
     # 0) Wildcard
     if isinstance(g, AnySymbol):
         # print(f"{tab}AnySymbol matches {c}")
@@ -43,7 +51,16 @@ def is_generalization_of(g, c, depth=0):
     if isinstance(c, AnySymbol):
         # print(f"{tab}{c} is AnySymbol (concrete side) – no match")
         return False
-
+    # # Unop
+    # if isinstance(g, Unop) and isinstance(g.args[0], AnySymbol):
+    #     return True
+    # if isinstance(c, Unop) and isinstance(c.args[0], AnySymbol):
+    #     return False
+    # # Binop
+    # if isinstance(g, Binop) and (isinstance(g.args[0], AnySymbol) or isinstance(g.args[1], AnySymbol)):
+    #     return True
+    # if isinstance(c, Binop) and (isinstance(c.args[0], AnySymbol) or isinstance(c.args[1], AnySymbol)):
+    #     return False
     # 1) 타입 불일치
     if type(g) is not type(c):
         # print(f"{tab}Type mismatch {type(g).__name__} vs {type(c).__name__}")
@@ -75,6 +92,7 @@ def is_generalization_of(g, c, depth=0):
         if not same_op:
             return False
         # 순서 유지
+        # print(f"{tab}Binop args: {g.args}, {g.args[0]},  {g.args[1]} vs {c.args}, {c.args[0]},  {c.args[1]}")
         if (is_generalization_of(g.args[0], c.args[0], depth+1) and
             is_generalization_of(g.args[1], c.args[1], depth+1)):
             return True
@@ -82,6 +100,7 @@ def is_generalization_of(g, c, depth=0):
         if g.op in COMMUTATIVE_OPS:
             return (is_generalization_of(g.args[0], c.args[1], depth+1) and
                     is_generalization_of(g.args[1], c.args[0], depth+1))
+        
         return False
 
     # 5) Load
@@ -113,6 +132,7 @@ def effect_generalization(g, c):
     if g.__class__.__name__ == "Call":
         # 각 인자 쌍이 한쪽이 다른 쪽을 일반화하거나, 반대도 일반화하면 True
         return all(
+            # print(f"Comparing args: {ga} and {ca} / {is_generalization_of(ga, ca)} and {is_generalization_of(ca, ga)}") or
             is_generalization_of(ga, ca) or is_generalization_of(ca, ga)
             for ga, ca in zip(g.args, c.args)
         )

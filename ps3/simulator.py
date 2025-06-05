@@ -13,7 +13,7 @@ from symbol_value import WildCardSymbol
 import time
 import lief
 from settings import *
-from refinement import refine_sig, rebuild_effects
+from refinement import refine_sig, rebuild_effects, effect_to_node
 from copy import deepcopy
 
 
@@ -740,7 +740,7 @@ class Test:
 
     def test_func(self, funcname: str, simulator: Simulator, sigs: list[Signature]) -> str:
         dic = {}
-        refined = False
+        
         for sig in sigs:
             dic.update(handle_pattern(sig.patterns))
             # print(f'{sig.funcname} {sig.state} {sig.patterns}') # ssl3_get_record modify [Patterns(patterns=[]), Patterns(patterns=[])]
@@ -755,6 +755,7 @@ class Test:
         result = []
         # test one hunk's signature
         for sig in sigs:
+            refined = False
             if sig.state == "vuln":
                 vuln_effect, _ = sig.serial()
                 patch_effect = []
@@ -777,9 +778,9 @@ class Test:
                     patch_effect = list(patch_effect)
 
                     # TODO: 여기서 refinement
-                    if vuln_effect != [] and patch_effect != []:    
-                        vuln_effect, patch_effect = refine_sig(vuln_effect, patch_effect)
-                        refined = True
+                    # if vuln_effect != [] and patch_effect != []:    
+                    #     vuln_effect, patch_effect = refine_sig(vuln_effect, patch_effect)
+                    #     refined = True
                     sig.sig_dict["add"] = patch_effect
                     sig.sig_dict["remove"] = vuln_effect
                 else:
@@ -813,7 +814,8 @@ class Test:
                 # all_effects = temp
                 all_effects = [rebuild_effects(e) for e in all_effects]
                 assert all_effects == old_effects, f"all_effects {all_effects} != old_effects {old_effects}"
-            # logger.info(f"all_effects: {set(all_effects)}")
+                # print(f"refined all_effects: {all_effects}")
+            logger.info(f"all_effects: {all_effects}") 
             # logger.info(f"all_effects: {sorted(str(InspectInfo(i)) for i in all_effects)}")
             # exit(0)
             # for effect in all_effects:
@@ -846,12 +848,17 @@ class Test:
             #     logger.info("modify")
             if test:
                 continue
+            # for ae in all_effects:
+            #     if ae in vuln_effect:
+            #         # logger.info(f"vuln {ae} is in vuln_effect")
+            #         vuln_match.append(ae)
+            #     if ae in patch_effect:
+            #         # logger.info(f"patch {ae} is in patch_effect")
+            #         patch_match.append(ae)
             for vuln in vuln_effect:
                 if vuln in all_effects:
                     vuln_match.append(vuln)
-            for patch in patch_effect:
-                # print(f"patch: {InspectInfo(patch)}, is in all_effects: {patch in all_effects}")
-                # print(f"type(patch): {type(patch)}, type(all_effects[0]): {type(all_effects[0])}")
+            for patch in patch_effect:                
                 if patch in all_effects:
                     # for i in all_effects:
                     #     if i == patch:

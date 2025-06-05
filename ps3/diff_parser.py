@@ -6,6 +6,8 @@ from debug_parser import DebugParser2
 from dataclasses import dataclass
 from log import *
 from settings import *
+from new_line import NewLine
+from parent_condition_finder import find_parent_control_block
 logger = logging.getLogger(__name__)
 
 
@@ -172,7 +174,7 @@ class DiffParser:
         return l
         return "other"  # TODO: other pattern
 
-    def get_binarylevel_change(self, debug_parser: DebugParser2) -> list[DiffResult]:
+    def get_binarylevel_change(self, debug_parser: DebugParser2, cve) -> list[DiffResult]:
         vuln_parser, patch_parser = debug_parser.vuln_parser, debug_parser.patch_parser
         result = []
 
@@ -190,42 +192,46 @@ class DiffParser:
                     normalized_removes = []
                     normalized_adds = []
 
-                    source_lines = list(hunk.source_lines())
-                    target_lines = list(hunk.target_lines())
+                    source_lines = [NewLine(
+                        line.value,
+                        line_type=line.line_type,
+                        source_line_no=line.source_line_no,
+                        target_line_no=line.target_line_no,
+                        parent_line_no=find_parent_control_block(cve, line.source_line_no, True)
+                    ) for line in hunk.source_lines()]
+                    target_lines = [NewLine(
+                        line.value,
+                        line_type=line.line_type,
+                        source_line_no=line.source_line_no,
+                        target_line_no=line.target_line_no,
+                        parent_line_no=None  # 필요하다면 적절히 지정
+                    ) for line in hunk.target_lines()]
 
                     # 미리 normalize 해서 비교용 셋 만들기
                     norm_src_map = {normalize_code_line(line.value): line.source_line_no
                                     for line in source_lines if line.is_removed}
                     norm_tgt_map = {normalize_code_line(line.value): line.target_line_no
                                     for line in target_lines if line.is_added}
-                    # 옛날 방식
-                    # norm_src_map = {line.value: line.source_line_no
-                    #                 for line in source_lines if line.is_removed}
-                    # norm_tgt_map = {line.value: line.target_line_no
-                    #                 for line in target_lines if line.is_added}
                     common_keys = set(norm_src_map.keys()) & set(norm_tgt_map.keys())
-
                     for line in source_lines:
                         if line.is_removed:
                             norm = normalize_code_line(line.value)
                             if norm in common_keys:
-                                # print(f"[SKIP] source line matched in both: {repr(norm)}")
                                 continue
                             temp_remove.append(line.value)
                             normalized_removes.append(norm)
                             binary_lines = vuln_parser.line2addr(funcname, line.source_line_no)
+                            print(f"binary_lines: {binary_lines}")
                             if len(binary_lines) == 0:
                                 continue
                             pattern = self._decidepattern(line.value)
                             if pattern is not None:
                                 remove_pattern.extend(pattern)
                             remove.extend(binary_lines)
-
                     for line in target_lines:
                         if line.is_added:
                             norm = normalize_code_line(line.value)
                             if norm in common_keys:
-                                # print(f"[SKIP] target line matched in both: {repr(norm)}")
                                 continue
                             temp_add.append(line.value)
                             normalized_adds.append(norm)

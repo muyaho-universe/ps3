@@ -9,9 +9,16 @@ from simplify import simplify
 from node import Node
 from itertools import product
 from collections import deque
-from partail_eq import is_generalization_of
 import re
+from log import *
+from settings import *
 
+logger = get_logger(__name__)
+logger.setLevel(INFO)
+file_handler = logging.FileHandler(LOG_PATH)
+file_handler.setLevel(logging.INFO)
+logger.addHandler(file_handler)
+ansi_escape = re.compile(r'\x1b\[[0-9;]*m')
 
 def tree_possible_subs(tree: Node, fallback_effect: Effect) -> Iterator[Effect]:
     # print(f"tree_possible_subs(tree{tree.print()})")
@@ -89,7 +96,7 @@ def refine_one(myself: list[InspectInfo], other: list[InspectInfo]) -> list[Insp
             #     exit(1)
             new_effect = generalized_tree   
             new_info = InspectInfo(new_effect)
-            # temp.append(new_info)
+            temp.append(new_info)
 
             # if isinstance(new_info.ins, Effect.Call):
 
@@ -148,15 +155,16 @@ def refine_one(myself: list[InspectInfo], other: list[InspectInfo]) -> list[Insp
             # print("go into other with new_info:", new_info)
 
             if go and new_info not in other :
-                # print(f"refine_one: {new_info} not in other {other}")
+                # print(f"refine_one: {new_info} not in other")
                 myself[i] = new_info
                 go = False
                 break  # 다른 효과와 겹치지 않는 첫 번째 generalized_tree를 찾으면 중단
 
                 
         
-        # result.append(temp)
+    #     result.append(temp)
     # print(f"refine result: {result}")
+    # exit(0)
     return myself 
 
 
@@ -185,14 +193,16 @@ def refine_sig(vuln_effect: list[InspectInfo], patch_effect: list[InspectInfo]) 
     #     print("=" * 50)
     # print(f"old == restored: {old_vuln_effect == temp}")
     vuln_effect = refine_one(vuln_effect, patch_effect)
-    
-    print(f"old_vuln_effect: {old_vuln_effect}")
-    print(f"vuln_effect: {vuln_effect}")
-    print("-" * 50)
+    logger = logging.getLogger(__name__)
+
+    logger.info("=" * 50)
+    logger.info(f"old_vuln_effect: {old_vuln_effect}")
+    logger.info(f"vuln_effect: {vuln_effect}")
+    logger.info("-" * 50)
     patch_effect = refine_one(patch_effect, vuln_effect)
-    print(f"old_patch_effect: {old_patch_effect}")
-    print(f"patch_effect: {patch_effect}")
-    print("=" * 50)
+    logger.info(f"old_patch_effect: {old_patch_effect}")
+    logger.info(f"patch_effect: {patch_effect}")
+    logger.info("=" * 50)
 
     
     # exit(1)
@@ -381,7 +391,8 @@ def rebuild_effects(effect: InspectInfo) -> InspectInfo:
     #     exit(1)
     concat = "Concat"
     hat = "^"
-    if concat in original_str or hat in original_str:
+    extract = "Extract"
+    if concat in original_str or hat in original_str or extract in original_str:
         # Concat이나 ^가 있는 경우는 처리하지 않음
         return effect
     if "Put: " in original_str:

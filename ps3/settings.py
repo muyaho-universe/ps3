@@ -34,6 +34,7 @@ TEST_FILE= os.path.join(HDD_PATH, 'test_FFmpeg.jsonl')
 BINARY_PATH = os.path.join(HDD_PATH, 'ps3_original_binary')
 LOG_PATH = os.path.join(ROOT_PATH, "ps3",'log_FFmpeg.txt')
 SRC_PATH = os.path.join(HDD_PATH, 'source')
+CVE_FILE = os.path.join(HDD_PATH, 'new_CVE_info.jsonl')
 
 # tcpdump
 # TEST_FILE= os.path.join(HDD_PATH, 'test_tcpdump_new.jsonl')

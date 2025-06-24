@@ -15,6 +15,7 @@ import lief
 from settings import *
 from refinement import refine_sig, rebuild_effects, effect_to_node
 from copy import deepcopy
+import dominator_builder
 
 
 class FunctionNotFound(Exception):
@@ -58,50 +59,69 @@ class State:
 
 
 class Simulator:
-    def __init__(self, proj: angr.Project, symbol=None) -> None:
+    def __init__(self, proj: angr.Project) -> None:
         self.proj = proj
-        self.symbol = symbol
-
     def _init_function(self, funcname: str):
         symbol = self.proj.loader.find_symbol(funcname)
-        if symbol is None:
-            if self.symbol is not None:
-                symbol = self.symbol
-            else: 
-                raise FunctionNotFound(
-                    f"symbol {funcname} not found in binary {self.proj}")
-        self.funcname = funcname
-        # print(f"symbol.size: {symbol.size}")
-        
-        cfg = self.proj.analyses.CFGFast(
-            regions=[(symbol.rebased_addr, symbol.rebased_addr + symbol.size)],
-            normalize=True,
-            force_complete_scan=True,
-            force_smart_scan=False
-        )
-        
-        function = None
 
+        if symbol is None:
+            raise FunctionNotFound(
+                f"symbol {funcname} not found in binary {self.proj}")
+        self.funcname = funcname
+        cfg = self.proj.analyses.CFGFast(
+            regions=[(symbol.rebased_addr, symbol.rebased_addr + symbol.size)], normalize=True)
+        function = None
         for func in cfg.functions:
-            if cfg.functions[func].name == 'sub_400000':
-                cfg.functions[func].name = funcname
-                function = cfg.functions[func]
-                break
             if cfg.functions[func].name == funcname:
                 function = cfg.functions[func]
                 break
-        # print(f"function: {function}")
-        # assert function is not None
-        if function is None:
-            logger.error(f"function {funcname} not found in binary {self.proj}")
-            raise FunctionNotFound(
-                f"function {funcname} not found in binary {self.proj}")
-        
+        assert function is not None
         self.graph = cfg.graph
-
         self.cfg = cfg
+        self.dom_tree, self.parent_info = dominator_builder.build_dominator_tree(cfg, funcname)
+        dominator_builder.print_dom_tree(self.dom_tree, symbol.rebased_addr, labels=None)
         self.function = function
         self._init_map()
+    # def _init_function(self, funcname: str):
+    #     symbol = self.proj.loader.find_symbol(funcname)
+    #     if symbol is None:
+    #         if self.symbol is not None:
+    #             symbol = self.symbol
+    #         else: 
+    #             raise FunctionNotFound(
+    #                 f"symbol {funcname} not found in binary {self.proj}")
+    #     self.funcname = funcname
+    #     # print(f"symbol.size: {symbol.size}")
+        
+    #     cfg = self.proj.analyses.CFGFast(
+    #         regions=[(symbol.rebased_addr, symbol.rebased_addr + symbol.size)],
+    #         normalize=True,
+    #         force_complete_scan=True,
+    #         force_smart_scan=False
+    #     )
+        
+    #     function = None
+
+    #     for func in cfg.functions:
+    #         if cfg.functions[func].name == 'sub_400000':
+    #             cfg.functions[func].name = funcname
+    #             function = cfg.functions[func]
+    #             break
+    #         if cfg.functions[func].name == funcname:
+    #             function = cfg.functions[func]
+    #             break
+    #     # print(f"function: {function}")
+    #     # assert function is not None
+    #     if function is None:
+    #         logger.error(f"function {funcname} not found in binary {self.proj}")
+    #         raise FunctionNotFound(
+    #             f"function {funcname} not found in binary {self.proj}")
+        
+    #     self.graph = cfg.graph
+
+    #     self.cfg = cfg
+    #     self.function = function
+    #     self._init_map()
 
     def _init_map(self):
         # print("in _init_map")
@@ -139,9 +159,44 @@ class Simulator:
         self.addr2Node = {}
         for node in self.cfg.nodes():
             self.addr2Node[node.addr] = node
+    # def _init_map(self):
+    #     # print("in _init_map")
+    #     self.node2IR: dict[angr.knowledge_plugins.cfg.cfg_node.CFGNode,
+    #                        list[stmt.Statement]] = {}
+    #     self.addr2IR = {}
+    #     addr = None
+    #     for block in self.function.blocks:
+    #         # logger.info(f"block.vex: {block.vex}")
+    #         for statement in block.vex.statements:
+    #             # print(f"statement: {statement}")
+    #             # exit(0)
+    #             if isinstance(statement, ps.IMark):
+    #                 addr = statement.addr
+    #             stmtwrapper = stmt.Statement.construct(statement)
+    #             if addr not in self.addr2IR:
+    #                 self.addr2IR[addr] = []
+    #             self.addr2IR[addr].append(stmtwrapper)
+
+    #     for node in self.graph.nodes:
+    #         self.node2IR[node] = []
+    #         addrs = node.instruction_addrs
+    #         for addr in addrs:
+    #             if addr not in self.addr2IR:
+    #                 continue
+    #                 assert False, f"addr {hex(addr)} not in addr2IR"
+    #             self.node2IR[node].extend(self.addr2IR[addr])
+
+        self.IR2addr = {}
+        for addr in self.addr2IR.keys():
+            IRs = self.addr2IR[addr]
+            for IR in IRs:
+                self.IR2addr[IR] = addr
+
+        self.addr2Node = {}
+        for node in self.cfg.nodes():
+            self.addr2Node[node.addr] = node
 
     def _reachable_set(self, addrs: set[int]) -> set:
-        # print("in _reachable_set")
         endnodes = []
         for addr in addrs:
             if addr not in self.addr2Node:
@@ -167,8 +222,50 @@ class Simulator:
         # print(visit)
         return visit
 
+    # def _reduce_addresses_by_basicblock(self, address: dict|list) -> tuple[set[int], list[dict]]:
+    #     # print("in _reduce_addresses_by_basicblock")
+    #     l = list(self.function.blocks)
+    #     result = set()
+    #     basic = []
+    #     if isinstance(address, list):
+    #         # address는 list일 수 있음
+    #         for addr in address:
+    #             for block in l:
+    #                 if addr in block.instruction_addrs:
+    #                     result.add(block.addr)
+    #                     basic.append({"parent": addr, "children": [], "parent_addrs": {block.addr}, "children_addrs": set()})
+    #                     break
+    #         return result, basic
+    #     else:
+    #         for parent, children in address.items():
+    #             # parent가 tuple일 수 있음
+    #             one_item = {"parent": parent, "children": children, "parent_addrs": set(), "children_addrs": set()}           
+    #             if isinstance(parent, tuple):
+    #                 bb_parent = set(addr for addr in parent)
+    #             else:
+    #                 bb_parent = {parent}
+    #             for addr in bb_parent:
+    #                 for block in l:
+    #                     if addr in block.instruction_addrs:
+    #                         result.add(block.addr)
+    #                         one_item["parent_addrs"].add(block.addr)
+    #                         break
+                
+    #             for addr in children:
+    #                 for block in l:
+    #                     if addr in block.instruction_addrs:
+    #                         result.add(block.addr)
+    #                         one_item["children_addrs"].add(block.addr)
+    #                         break
+    #             basic.append(one_item)
+    #         # for addr in address:
+    #         #     for block in l:
+    #         #         if addr in block.instruction_addrs:
+    #         #             result.add(block.addr)
+    #         #             break
+    #         return result, basic
+
     def _reduce_addresses_by_basicblock(self, address: list[int]) -> set[int]:
-        # print("in _reduce_addresses_by_basicblock")
         l = list(self.function.blocks)
         result = set()
         for addr in address:
@@ -178,12 +275,42 @@ class Simulator:
                     break
         return result
 
+    # def generate_forall_bb(self, funcname: str, dic) -> dict:
+    #     # print("in generate_forall_bb")
+    #     try: 
+    #         self._init_function(funcname)
+    #     except FunctionNotFound:
+    #         raise FunctionNotFound(f"function {funcname} not found in binary {self.proj}")
+    #     all_addrs = []
+    #     collect = {}
+    #     for block in self.function.blocks:
+    #         all_addrs.extend(block.instruction_addrs)
+    #     # all_addrs는 int 리스트이므로 별도 처리 불필요
+    #     self.inspect_addrs = all_addrs
+    #     start_node = self.cfg.get_any_node(self.function.addr)
+    #     init_state = State(start_node, Environment())
+    #     reduce, info = self._reduce_addresses_by_basicblock(all_addrs)
+    #     reduce_addr = set(reduce)
+    #     # based on basic block inspect
+    #     init_state.inspect = {addr: {} for addr in reduce_addr}
+    #     init_state.inspect_patterns = dic
+    #     queue = [init_state]
+    #     visit = set()
+    #     while len(queue) > 0:  # DFS
+    #         state = queue.pop()
+    #         if state.node.addr in visit:
+    #             continue
+    #         result = self._simulateBB(state)
+    #         if isinstance(result, list):  # fork
+    #             visit.update(result[0].addrs)
+    #             queue.extend(result[1:])
+    #         else:  # state run to the end
+    #             visit.update(result.addrs)
+    #             collect.update(result.inspect)
+    #     return collect
+
     def generate_forall_bb(self, funcname: str, dic) -> dict:
-        # print("in generate_forall_bb")
-        try: 
-            self._init_function(funcname)
-        except FunctionNotFound:
-            raise FunctionNotFound(f"function {funcname} not found in binary {self.proj}")
+        self._init_function(funcname)
         all_addrs = []
         collect = {}
         for block in self.function.blocks:
@@ -209,6 +336,52 @@ class Simulator:
                 visit.update(result.addrs)
                 collect.update(result.inspect)
         return collect
+
+    # def generate(self, funcname: str, addresses: dict, patterns) -> tuple[dict, list[dict]]:
+    #     # print("in Simulator generate")
+        
+    #     self._init_function(funcname)
+    #     trace = {}
+    #     reduce, info = self._reduce_addresses_by_basicblock(addresses)
+    #     reduce_addr = set(reduce)
+    #     reachable = self._reachable_set(reduce_addr)
+    #     start_node = self.cfg.get_any_node(self.function.addr)
+    #     flatten_list = []
+    #     for parent, children in addresses.items():
+    #         # parent가 tuple일 수 있음
+    #         if isinstance(parent, tuple):
+    #             flatten_list.extend(list(parent))
+    #         else:
+    #             flatten_list.append(parent)
+    #         flatten_list.extend(children)
+
+    #     # self.inspect_addrs = addresses
+    #     self.inspect_addrs = flatten_list
+    #     init_state = State(start_node, Environment())
+    #     # based on basic block inspect
+    #     init_state.inspect = {addr: {} for addr in reduce_addr}
+    #     init_state.inspect_patterns = patterns
+    #     queue = [init_state]
+    #     visit = set()
+    #     while len(queue) > 0:  # DFS
+    #         state = queue.pop()
+    #         if state.node.addr not in reachable:
+    #             continue
+    #         if state.node.addr in visit:
+    #             continue
+    #         result = self._simulateBB(state, step_one=True)
+            
+    #         if isinstance(result, list):  # fork
+    #             visit.update(result[0].addrs)
+    #             trace.update(result[0].inspect)
+    #             queue.extend(result)
+    #         # else: # state run to the end
+    #         #     if result.node.addr in reduce_addr:
+    #         #         breakpoint()
+    #         #     visit.update(result.addrs)
+    #         #     trace.update(result.inspect)
+    #         #     queue.append(result)
+    #     return trace, info
 
     def generate(self, funcname: str, addresses: list[int], patterns) -> dict:
         # print("in Simulator generate")
@@ -250,10 +423,9 @@ class Simulator:
         return trace
 
     def _simulateBB(self, state: State, step_one=False) -> list[State] | State:
-        # print("in _simulateBB")
-        # print(f"state.env: {state.env.show()}")
         while 1:
             state.addrs.append(state.node.addr)
+            print(f"Now begin {hex(state.node.addr)}")
             # print("=========================================")
             # logger.info("=========================================")
             # state.env.show_regs()
@@ -268,10 +440,9 @@ class Simulator:
             # for stmt in self.node2IR[state.node]:
             #     logger.info(f"stmt: {stmt}")
             # time.sleep(10)
-            
             # input()
             for stmt in self.node2IR[state.node]:
-                machine_addr = self.IR2addr[stmt]                
+                machine_addr = self.IR2addr[stmt]
                 if machine_addr in self.inspect_addrs:
                     # logger.info(f"machine_addr is in inspect_addrs: {hex(machine_addr)}")
                     
@@ -575,6 +746,60 @@ class Generator:
         assert proj1.loader.main_object.min_addr == proj2.loader.main_object.min_addr
         return Generator(proj1, proj2)
 
+    # def generate(self, funcname: str, addresses: dict, state: str, patterns: Patterns) -> dict:
+    #     patterns_ = handle_pattern(patterns)
+    #     new_addresses = {}
+    #     try:
+    #         if state == "vuln":
+    #             base_addr = self.vuln_proj.proj.loader.main_object.min_addr
+                
+    #         elif state == "patch":
+    #             base_addr = self.patch_proj.proj.loader.main_object.min_addr
+    #         else:
+    #             raise NotImplementedError(f"{state} is not considered.")
+            
+            
+    #         for key in addresses.keys():
+    #             if key != "None":
+    #                 temp = addresses[key]
+    #                 temp = [addr + base_addr for addr in temp]
+    #                 new_key = tuple(x + base_addr for x in key)
+    #                 new_addresses[new_key] = temp
+    #             else:
+    #                 temp = addresses[key]
+    #                 temp = [addr + base_addr for addr in temp]
+    #                 new_addresses[key] = temp
+
+                    
+    #         # if isinstance(addresses[0], tuple):
+    #         #     addresses = [(parent + base_addr, binary + base_addr) for parent, binary in addresses]
+    #         # else:
+    #         #     addresses = [
+    #         #             addr + base_addr for addr in addresses]
+    #         if state == "vuln":
+    #             collect, info = self.vuln_proj.generate(
+    #                 funcname, new_addresses, patterns_)
+    #         elif state == "patch":
+    #             collect, info = self.patch_proj.generate(
+    #                 funcname, new_addresses, patterns_)
+    #         else:
+    #             raise NotImplementedError(f"{state} is not considered.")
+    #         # collect = self.vuln_proj.generate_parent_child(
+    #         #     funcname, new_addresses, patterns_)
+    #     except FunctionNotFound:
+    #         return None
+    #     print(f"new_addresses: {new_addresses}")
+    #     print(f"collect: {collect}")
+    #     print(f"info: {info}")
+    #     new_collect = extract_collect(new_addresses, collect, info)
+    #     print(f"new_collect: {new_collect}")
+    #     for bb in new_collect.keys():
+    #         clean_collect = clean(new_collect[bb])
+    #         new_collect[bb] = clean_collect
+        
+    #     print(f"signature: {new_collect}")
+    #     return collect
+
     def generate(self, funcname: str, addresses: list[int], state: str, patterns: Patterns) -> dict:
         # print("in Generator generate")
         patterns_ = handle_pattern(patterns)
@@ -594,6 +819,93 @@ class Generator:
         except FunctionNotFound:
             return None
         return collect
+
+def extract_collect(addresses: dict, collect:dict, info:list) -> dict:
+    new_collect = {}
+    for parent, children in addresses.items():
+        p_con = None
+        for i in info:
+            if parent == "None":
+                new_collect["None"] = []
+                child_addrs = i["children_addrs"]
+                for c_addr in child_addrs:
+                    for c in children:
+                        child_collect = collect[c_addr][c]
+                        new_collect["None"].extend(child_collect)
+            else:
+                if i["parent"] == parent:
+                    parent_addrs = i["parent_addrs"]
+                    for p_addr in parent_addrs:
+                        for p in parent:
+                            parent_collect = collect[p_addr][p]
+                            for col in parent_collect:
+                                temp_col = col
+                                if  isinstance(col.ins, Effect.Condition):
+                                    if p_con is None:
+                                        new_collect[col] = []
+                                        p_con = col
+                                    else:
+                                        print(f"two conditions for p_addr: {p_addr}, p: {p}, col: {col}, p_con: {p_con}")
+                                        exit(0)
+                    child_addrs = i["children_addrs"]
+                    for c_addr in child_addrs:
+                        for c in children:
+                            child_collect = collect[c_addr][c]
+                            new_collect[p_con].extend(child_collect)
+                new_collect[p_con]= list(set(new_collect[p_con]))
+    return new_collect
+                                
+def clean(collect):
+    # print("in _clean")
+    collect_copy = collect.copy()
+    for site in collect_copy:
+        string = str(site)
+        if string.find("FakeRet") == -1 and string.find("Mem") == -1 and string.find("SR") == -1:
+            collect.remove(site)
+    collect_copy = collect.copy()
+    conds = []
+    others = []
+    for site in sorted(collect_copy, key=lambda x: str(x)):
+        effect = site.ins
+        # if site.ins[0] == "Condition":
+        if isinstance(effect, Effect.Condition):
+            # string = str(site.ins[1])
+            string = str(site).split("Condition: ")[-1].strip()
+            conds.append(string)
+        # elif site.ins[0] == "Store":
+        elif isinstance(effect, Effect.Store):
+            # string = str(site.ins[2])
+            string = str(site).split("Store: ")[-1].split("= ")[-1].strip()
+            if string in others:
+                collect.remove(site)
+                continue
+            for cond in conds:
+                if string in cond:
+                    collect.remove(site)
+                    break
+            others.append(string)
+        # elif site.ins[0] == "Call":
+        elif isinstance(effect, Effect.Call):
+            # for arg in site.ins[2]:
+            args = str(site).split(effect.name + "(")[-1].replace("))", ")")
+            others.append(args)
+            
+        # elif site.ins[0] == "Put":
+        elif isinstance(effect, Effect.Put):
+            # string = str(site.ins[2])
+            string = str(site).split("Put: ")[-1].split("= ")[-1].strip()
+            # FakeRet with name, we cannot remove it
+            if "FakeRet" in string and len(string) > len("FakeRet()"):
+                continue
+            if string in others:
+                collect.remove(site)
+                continue
+            for cond in conds:
+                if string in cond:
+                    collect.remove(site)
+                    break
+            others.append(string)
+    return collect
 
 
 def getbbs(collect) -> list:
@@ -748,6 +1060,7 @@ class Test:
         try:
             traces: dict = simulator.generate_forall_bb(funcname, dic)
             # print(f"traces: {traces}")
+            # exit(0)
             # time.sleep(10)
         except FunctionNotFound:
             print(f"FunctionNotFound: {funcname}")

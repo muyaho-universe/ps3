@@ -11,7 +11,7 @@ from inspect_info import InspectInfo, Effect
 from diff_parser import Patterns
 from symbol_value import WildCardSymbol
 import time
-import lief
+import lief # type: ignore
 from settings import *
 from refinement import refine_sig, rebuild_effects, effect_to_node
 from copy import deepcopy

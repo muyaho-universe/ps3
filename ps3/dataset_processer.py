@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-import jsonlines
+import jsonlines # type: ignore
 from settings import TEST_FILE
 
 @dataclass

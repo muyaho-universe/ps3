@@ -1,5 +1,5 @@
 import logging
-from unidiff import PatchSet, PatchedFile, Hunk
+from unidiff import PatchSet, PatchedFile, Hunk # type: ignore
 from pygments.lexers import get_lexer_by_name
 from pygments.token import Token
 from debug_parser import DebugParser2

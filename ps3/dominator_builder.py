@@ -26,9 +26,7 @@ def build_dominator_tree(cfg, target_func_name):
         if src.addr in func_block_addrs and dst.addr in func_block_addrs:
             G.add_edge(src.addr, dst.addr, jumpkind=data['jumpkind'])
             nodes.append({'src': src.addr, 'dst': dst.addr, 'type': data['jumpkind']})
-    parent_info = merge_nodes(nodes)
-    for k, v in parent_info.items():
-        print(f"parent_info: {hex(k)} -> {hex(v)}")
+    super_node = merge_nodes(nodes)
     if G.number_of_nodes() == 0:
         print(f"[!] No edges found in function '{target_func_name}'.")
         return None
@@ -44,7 +42,7 @@ def build_dominator_tree(cfg, target_func_name):
             else:
                 dom_tree.add_edge(idom, node)
     
-    return dom_tree, parent_info
+    return dom_tree, super_node
 
 
 def merge_nodes(nodes):
@@ -72,11 +70,7 @@ def merge_nodes(nodes):
         supernode[item['src']] = find(item['src'])
         supernode[item['dst']] = find(item['dst'])
 
-    parent_info = {}
-    for k, v in supernode.items():
-        parent_info[k] = v
-
-    return parent_info
+    return supernode
 
 def print_dom_tree(tree, node, labels, depth=0, visited=None):
     if labels is None:

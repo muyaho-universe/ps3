@@ -78,7 +78,8 @@ class Simulator:
         assert function is not None
         self.graph = cfg.graph
         self.cfg = cfg
-        self.dom_tree, self.parent_info = dominator_builder.build_dominator_tree(cfg, funcname)
+        self.dom_tree, self.super_node = dominator_builder.build_dominator_tree(cfg, funcname)
+        # print(f"self.parent_info: {self.parent_info}")
         dominator_builder.print_dom_tree(self.dom_tree, symbol.rebased_addr, labels=None)
         self.function = function
         self._init_map()
@@ -311,6 +312,7 @@ class Simulator:
 
     def generate_forall_bb(self, funcname: str, dic) -> dict:
         self._init_function(funcname)
+        
         all_addrs = []
         collect = {}
         for block in self.function.blocks:
@@ -382,6 +384,91 @@ class Simulator:
     #         #     trace.update(result.inspect)
     #         #     queue.append(result)
     #     return trace, info
+    def get_supernode_for_addresses(self, addresses: list[int]) -> dict[int, int]:
+        """
+        각 address가 속한 super node(대표 주소)를 반환합니다.
+        :param addresses: 확인할 address 리스트
+        :return: {address: supernode_addr} 딕셔너리
+        """
+        # 1. 각 address가 속한 블록의 head address를 찾는다.
+        addr_to_head = {}
+        for addr in addresses:
+            head_addr = None
+            for block in self.function.blocks:
+                if addr in block.instruction_addrs:
+                    head_addr = block.addr
+                    break
+            addr_to_head[addr] = head_addr
+
+        # 2. head address로 super_node에서 슈퍼노드 대표 주소를 찾는다.
+        return {addr: self.super_node.get(head_addr, None) for addr, head_addr in addr_to_head.items()}
+    def get_parent_supernode_for_addresses(self, addresses: list[int]) -> dict[int, int | None]:
+        """
+        각 address의 super node의 dominator tree상 parent(super node) block의 node head address를 반환합니다.
+        :param addresses: 확인할 address 리스트
+        :return: {address: parent_supernode_addr or None} 딕셔너리
+        """
+        # supernode_map: address -> supernode_addr
+        # dom_tree: supernode_addr(parent) -> supernode_addr(child)
+        result = {}
+        self.supernode_map = self.get_supernode_for_addresses(addresses)
+        for addr in addresses:
+            supernode = self.supernode_map.get(addr)
+            if supernode is None:
+                result[addr] = None
+                continue
+            # dom_tree에서 supernode의 parent 찾기 (parent -> supernode edge)
+            parent = None
+            for p, c in self.dom_tree.edges():
+                if c == supernode:
+                    parent = p
+                    break
+            result[addr] = parent
+        return result
+    
+    def get_parent_supernode_node_for_addresses(self, addresses: list[int]) -> dict[int, angr.knowledge_plugins.cfg.cfg_node.CFGNode | None]:
+        """
+        각 address의 super node의 dominator tree상 parent(super node) block의 node 객체를 반환합니다.
+        :param addresses: 확인할 address 리스트
+        :return: {address: parent_supernode_node or None} 딕셔너리
+        """
+        # 1. 각 address가 속한 블록의 head address를 찾는다.
+        addr_to_head = {}
+        for addr in addresses:
+            head_addr = None
+            for block in self.function.blocks:
+                if addr in block.instruction_addrs:
+                    head_addr = block.addr
+                    break
+            addr_to_head[addr] = head_addr
+
+        # 2. head address로 super_node에서 슈퍼노드 대표 주소를 찾는다.
+        addr_to_supernode = {addr: self.super_node.get(head_addr, None) for addr, head_addr in addr_to_head.items()}
+
+        # 3. 도미네이터 트리에서 parent supernode 주소 찾기
+        result = {}
+        for addr, supernode in addr_to_supernode.items():
+            if supernode is None:
+                result[addr] = None
+                continue
+            parent = None
+            for p, c in self.dom_tree.edges():
+                if c == supernode:
+                    parent = p
+                    break
+            if parent is None:
+                result[addr] = None
+                continue
+            # 4. parent(supernode) 주소에 해당하는 node 객체 찾기
+            parent_node = self.addr2Node.get(parent, None)
+            parent_addr = set()
+            for stmt in self.node2IR[parent_node]:
+                machine_addr = self.IR2addr[stmt]
+                parent_addr.add(machine_addr)
+                # print(f"machine_addr: {hex(machine_addr)}")
+                # print(f"stmt: {stmt}")
+            result[addr] = parent_addr
+        return result
 
     def generate(self, funcname: str, addresses: list[int], patterns) -> dict:
         # print("in Simulator generate")
@@ -389,17 +476,29 @@ class Simulator:
             addresses = [(addr + self.proj.loader.main_object.min_addr)
                          for addr in addresses]
         self._init_function(funcname)
+        self.supernode_parent_map = self.get_parent_supernode_for_addresses(addresses)
+        self.address_parent = self.get_parent_supernode_node_for_addresses(addresses)
         trace = {}
         reduce_addr = set(self._reduce_addresses_by_basicblock(addresses))
         reachable = self._reachable_set(reduce_addr)
         start_node = self.cfg.get_any_node(self.function.addr)
-        self.inspect_addrs = addresses
+        self.inspect_addrs = deepcopy(addresses)
         init_state = State(start_node, Environment())
         # based on basic block inspect
         init_state.inspect = {addr: {} for addr in reduce_addr}
-        init_state.inspect_patterns = patterns
+        for addr in reduce_addr:
+            parent_addr = self.supernode_parent_map[addr]
+            if parent_addr not in init_state.inspect:
+                init_state.inspect[parent_addr] = {}
+            
+        for ap in self.address_parent:
+            for addr in addresses:
+                for parent_addr in self.address_parent[addr]:
+                    if parent_addr not in self.inspect_addrs:
+                        self.inspect_addrs.append(parent_addr)
         queue = [init_state]
         visit = set()
+        temp_addr_trace = {}
         while len(queue) > 0:  # DFS
             state = queue.pop()
             if state.node.addr not in reachable:
@@ -409,10 +508,16 @@ class Simulator:
             # logger.debug(f"Now begin {hex(state.node.addr)}")
             result = self._simulateBB(state, step_one=True)
             # print(f"result: {result}")
+            
             if isinstance(result, list):  # fork
                 visit.update(result[0].addrs)
                 trace.update(result[0].inspect)
+                print("trace:", trace)
+                # temp_addr_trace[result[0].addrs] = result[0].inspect
                 queue.extend(result)
+
+                print(f"visit: {hexl(visit)}")
+
             # else: # state run to the end
             #     if result.node.addr in reduce_addr:
             #         breakpoint()
@@ -420,12 +525,13 @@ class Simulator:
             #     trace.update(result.inspect)
             #     queue.append(result)
             # print(f"trace: {trace}")
+        # print(f"temp_addr_trace: {temp_addr_trace}")
+        print(f"trace: {trace}")
         return trace
 
     def _simulateBB(self, state: State, step_one=False) -> list[State] | State:
         while 1:
             state.addrs.append(state.node.addr)
-            print(f"Now begin {hex(state.node.addr)}")
             # print("=========================================")
             # logger.info("=========================================")
             # state.env.show_regs()
@@ -444,7 +550,6 @@ class Simulator:
             for stmt in self.node2IR[state.node]:
                 machine_addr = self.IR2addr[stmt]
                 if machine_addr in self.inspect_addrs:
-                    # logger.info(f"machine_addr is in inspect_addrs: {hex(machine_addr)}")
                     
                     # when Exit stmt, return guard, else return tuple) else return None
                     cond = stmt.simulate(state.env, True)

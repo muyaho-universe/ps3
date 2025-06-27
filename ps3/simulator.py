@@ -61,6 +61,8 @@ class State:
 class Simulator:
     def __init__(self, proj: angr.Project) -> None:
         self.proj = proj
+        self.from_to = []
+
     def _init_function(self, funcname: str):
         symbol = self.proj.loader.find_symbol(funcname)
 
@@ -402,7 +404,7 @@ class Simulator:
 
         # 2. head address로 super_node에서 슈퍼노드 대표 주소를 찾는다.
         return {addr: self.super_node.get(head_addr, None) for addr, head_addr in addr_to_head.items()}
-    def get_parent_supernode_for_addresses(self, addresses: list[int]) -> dict[int, int | None]:
+    def get_parent_supernode_addr_for_addresses(self, addresses: list[int]) -> dict[int, int | None]:
         """
         각 address의 super node의 dominator tree상 parent(super node) block의 node head address를 반환합니다.
         :param addresses: 확인할 address 리스트
@@ -426,7 +428,7 @@ class Simulator:
             result[addr] = parent
         return result
     
-    def get_parent_supernode_node_for_addresses(self, addresses: list[int]) -> dict[int, angr.knowledge_plugins.cfg.cfg_node.CFGNode | None]:
+    def get_parent_supernode_nodeobj_for_addresses(self, addresses: list[int]) -> dict[int, angr.knowledge_plugins.cfg.cfg_node.CFGNode | None]:
         """
         각 address의 super node의 dominator tree상 parent(super node) block의 node 객체를 반환합니다.
         :param addresses: 확인할 address 리스트
@@ -476,8 +478,9 @@ class Simulator:
             addresses = [(addr + self.proj.loader.main_object.min_addr)
                          for addr in addresses]
         self._init_function(funcname)
-        self.supernode_parent_map = self.get_parent_supernode_for_addresses(addresses)
-        self.address_parent = self.get_parent_supernode_node_for_addresses(addresses)
+        self.supernode_parent_map = self.get_parent_supernode_addr_for_addresses(addresses)
+        self.address_parent = self.get_parent_supernode_nodeobj_for_addresses(addresses)
+
         trace = {}
         reduce_addr = set(self._reduce_addresses_by_basicblock(addresses))
         reachable = self._reachable_set(reduce_addr)
@@ -486,19 +489,19 @@ class Simulator:
         init_state = State(start_node, Environment())
         # based on basic block inspect
         init_state.inspect = {addr: {} for addr in reduce_addr}
-        for addr in reduce_addr:
+        init_state.inspect_patterns = patterns
+        # print(f"self.supernode_parent_map: {self.supernode_parent_map}")
+
+        for addr in addresses:
             parent_addr = self.supernode_parent_map[addr]
             if parent_addr not in init_state.inspect:
                 init_state.inspect[parent_addr] = {}
-            
-        for ap in self.address_parent:
-            for addr in addresses:
-                for parent_addr in self.address_parent[addr]:
+            for parent_addr in self.address_parent[addr]:
                     if parent_addr not in self.inspect_addrs:
                         self.inspect_addrs.append(parent_addr)
+                
         queue = [init_state]
         visit = set()
-        temp_addr_trace = {}
         while len(queue) > 0:  # DFS
             state = queue.pop()
             if state.node.addr not in reachable:
@@ -512,11 +515,7 @@ class Simulator:
             if isinstance(result, list):  # fork
                 visit.update(result[0].addrs)
                 trace.update(result[0].inspect)
-                print("trace:", trace)
-                # temp_addr_trace[result[0].addrs] = result[0].inspect
                 queue.extend(result)
-
-                print(f"visit: {hexl(visit)}")
 
             # else: # state run to the end
             #     if result.node.addr in reduce_addr:
@@ -525,37 +524,55 @@ class Simulator:
             #     trace.update(result.inspect)
             #     queue.append(result)
             # print(f"trace: {trace}")
-        # print(f"temp_addr_trace: {temp_addr_trace}")
+        # trace를 parent-child 관계로 변환
         print(f"trace: {trace}")
-        return trace
+        for parent, child in self.dom_tree.edges():
+            # print(f"parent: {parent}, child: {child}")
+            # print(f"from_to: {self.from_to}")
+            is_true_branch = (parent, child) in self.from_to
+            self.dom_tree[parent][child]['true_branch'] = is_true_branch
+
+        for parent, child in self.dom_tree.edges():
+            is_true_branch = self.dom_tree[parent][child].get('true_branch', False)
+            # print(f"0x{parent:x} -> 0x{child:x}, true_branch: {is_true_branch}")
+        print(f"trace: {trace}")
+        new_trace = {}
+        for k in trace.keys():
+            if k in self.supernode_parent_map:
+                parent = self.supernode_parent_map[k]
+                k_top = self.supernode_map[k]
+                is_true_branch = self.dom_tree[parent][k_top].get('true_branch', False)
+                # trace[parent]를 순회해서 Condition 만 가져오기 (Condition, true_branch 여부)
+                for _, traces in trace[parent].items():
+                    for t in traces:
+                        if isinstance(t, InspectInfo) and isinstance(t.ins, Effect.Condition):
+                            # print(f"Condition: {t.effect.condition}, true_branch: {is_true_branch}")
+                            # parent_cond = t
+                            new_trace[(t, is_true_branch)] = []
+                            for _, item in trace[k].items():
+                                new_trace[(t, is_true_branch)].extend(item)
+                            i = clean(new_trace[(t, is_true_branch)])
+                            new_trace[(t, is_true_branch)] = i
+                # print(f"0x{k:x} -> 0x{parent:x}, true_branch: {is_true_branch}")
+            # else:
+            #     print(f"Warning: {k} not in supernode_parent_map")
+        # print(f"new_trace: {new_trace}")
+        return new_trace
+    
 
     def _simulateBB(self, state: State, step_one=False) -> list[State] | State:
         while 1:
             state.addrs.append(state.node.addr)
-            # print("=========================================")
-            # logger.info("=========================================")
-            # state.env.show_regs()
-            # logger.info("=========================================")
-            # state.env.show_mems()
-            # logger.info("=========================================\n")
-            # print("=========================================")
-            # state.env.show_regs()
-            # print("=========================================")
-            # a = state.node.block.vex._pp_str()
-            # print("a:",a)
-            # for stmt in self.node2IR[state.node]:
-            #     logger.info(f"stmt: {stmt}")
-            # time.sleep(10)
-            # input()
-            for stmt in self.node2IR[state.node]:
-                machine_addr = self.IR2addr[stmt]
+            for statement in self.node2IR[state.node]:
+                machine_addr = self.IR2addr[statement]
                 if machine_addr in self.inspect_addrs:
-                    
-                    # when Exit stmt, return guard, else return tuple) else return None
-                    cond = stmt.simulate(state.env, True)
-                    # if cond is not None:
-                       
-                    #     print(f"cond: {cond}")
+                    # print(f"machine_addr: {hex(machine_addr)}")
+                    # print(f"statement: {statement}") 
+                    if isinstance(statement, stmt.Exit):
+                        dst = statement.stmt.dst.value
+                        self.from_to.append((state.node.addr, dst))
+                        # print(f"Exit statement found: {hex(state.node.addr)} -> {hex(dst)} in {statement}")
+                    cond = statement.simulate(state.env, True)
                     basicblock_addr = state.node.addr
                     # logger.info(f"basicblock_addr: {hex(basicblock_addr)}")
                     assert basicblock_addr in state.inspect
@@ -574,7 +591,7 @@ class Simulator:
                         )
                     # logger.info(f"block2: {block}")                   
                 else:
-                    cond = stmt.simulate(state.env)
+                    cond = statement.simulate(state.env)
             length = len(state.node.successors_and_jumpkinds(False))
             if length == 0:
                 return state
@@ -777,11 +794,16 @@ class Signature:
     def _show(self, collect, type="") -> None:
         # print("=========================================", type)
         logger.info(f"========================================= {type} signature")
-        ser = self._serial(collect)
+        # ser = self._serial(collect)
         # print(f"ser: {ser}")
-        for single_site in ser[0]:
-            # print(single_site)
-            logger.info(single_site)
+        # for single_site in ser[0]:
+        #     # print(single_site)
+        #     logger.info(single_site)
+        for key, value in collect.items():
+            logger.info(f"Key: {key}")
+            logger.info("------------------------------------------")
+            for v in value:
+                logger.info(v)
         # print("=========================================")
         logger.info("=========================================")
 
@@ -899,7 +921,7 @@ class Generator:
     #     new_collect = extract_collect(new_addresses, collect, info)
     #     print(f"new_collect: {new_collect}")
     #     for bb in new_collect.keys():
-    #         clean_collect = clean(new_collect[bb])
+            # clean_collect = clean(new_collect[bb])
     #         new_collect[bb] = clean_collect
         
     #     print(f"signature: {new_collect}")

@@ -105,11 +105,10 @@ def run_one(tests: list[TestJson]) -> list[TestResult]:
     for funcname in sigs.keys():
         sig = sigs[funcname]
         if len(sig) > 1:
-            pass
             sigs[funcname] = valid_sig(sig)
         for s in sigs[funcname]:
             s.show()
-    
+    exit(0)
     testor = Test(sigs)
     if TEST_NUM >= 0:  # test specific number of tests
         if TEST_NUM == 0:

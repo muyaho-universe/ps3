@@ -314,11 +314,13 @@ class Simulator:
 
     def generate_forall_bb(self, funcname: str, dic) -> dict:
         self._init_function(funcname)
-        
+
         all_addrs = []
         collect = {}
         for block in self.function.blocks:
             all_addrs.extend(block.instruction_addrs)
+        self.supernode_parent_map = self.get_parent_supernode_addr_for_addresses(all_addrs)
+        self.address_parent = self.get_parent_supernode_nodeobj_for_addresses(all_addrs)
         self.inspect_addrs = all_addrs
         start_node = self.cfg.get_any_node(self.function.addr)
         init_state = State(start_node, Environment())
@@ -339,7 +341,53 @@ class Simulator:
             else:  # state run to the end
                 visit.update(result.addrs)
                 collect.update(result.inspect)
-        return collect
+        # print(f"collect: {collect}")
+        
+        for parent, child in self.dom_tree.edges():
+            # print(f"parent: {parent}, child: {child}")
+            # print(f"from_to: {self.from_to}")
+            is_true_branch = (parent, child) in self.from_to
+            self.dom_tree[parent][child]['true_branch'] = is_true_branch
+
+        for parent, child in self.dom_tree.edges():
+            is_true_branch = self.dom_tree[parent][child].get('true_branch', False)
+            # print(f"0x{parent:x} -> 0x{child:x}, true_branch: {is_true_branch}")
+        # print(f"collect: {collect}")
+        new_collect = {}
+        for k in collect.keys():
+            if k in self.supernode_parent_map:
+                parent = self.supernode_parent_map[k]
+                k_top = self.supernode_map[k]
+                if parent is None:
+                    key = ("None", False)
+                    new_collect[key] = []
+                    for _, item in collect[k].items():
+                        new_collect[key].extend(item)
+                    # i = clean(new_collect[(t, False)])
+                    # i = new_collect[key]
+                    # new_collect[key] = i
+                else:
+                    is_true_branch = self.dom_tree[parent][k_top].get('true_branch', False)
+                    # trace[parent]를 순회해서 Condition 만 가져오기 (Condition, true_branch 여부)
+                    for _, traces in collect[parent].items():
+                        for t in traces:
+                            if isinstance(t, InspectInfo) and isinstance(t.ins, Effect.Condition):
+                                # print(f"Condition: {t.effect.condition}, true_branch: {is_true_branch}")
+                                # parent_cond = t
+                                key = (t, is_true_branch)
+                                if key not in new_collect:
+                                    new_collect[key] = []
+                                for _, item in collect[k].items():
+                                    if key not in new_collect:
+                                        new_collect[key] = []
+                                    
+                                    new_collect[key].extend(item)
+                                # i = clean(new_collect[key])
+                                # i = new_collect[key]
+                                # new_collect[key] = i
+        # print(f"new_collect: {new_collect}")
+        # exit(0)
+        return new_collect
 
     # def generate(self, funcname: str, addresses: dict, patterns) -> tuple[dict, list[dict]]:
     #     # print("in Simulator generate")
@@ -525,7 +573,6 @@ class Simulator:
             #     queue.append(result)
             # print(f"trace: {trace}")
         # trace를 parent-child 관계로 변환
-        print(f"trace: {trace}")
         for parent, child in self.dom_tree.edges():
             # print(f"parent: {parent}, child: {child}")
             # print(f"from_to: {self.from_to}")
@@ -535,24 +582,31 @@ class Simulator:
         for parent, child in self.dom_tree.edges():
             is_true_branch = self.dom_tree[parent][child].get('true_branch', False)
             # print(f"0x{parent:x} -> 0x{child:x}, true_branch: {is_true_branch}")
-        print(f"trace: {trace}")
         new_trace = {}
         for k in trace.keys():
             if k in self.supernode_parent_map:
                 parent = self.supernode_parent_map[k]
                 k_top = self.supernode_map[k]
-                is_true_branch = self.dom_tree[parent][k_top].get('true_branch', False)
-                # trace[parent]를 순회해서 Condition 만 가져오기 (Condition, true_branch 여부)
-                for _, traces in trace[parent].items():
-                    for t in traces:
-                        if isinstance(t, InspectInfo) and isinstance(t.ins, Effect.Condition):
-                            # print(f"Condition: {t.effect.condition}, true_branch: {is_true_branch}")
-                            # parent_cond = t
-                            new_trace[(t, is_true_branch)] = []
-                            for _, item in trace[k].items():
-                                new_trace[(t, is_true_branch)].extend(item)
-                            i = clean(new_trace[(t, is_true_branch)])
-                            new_trace[(t, is_true_branch)] = i
+                if parent is None:
+                    key = ("None", False)
+                    new_trace[key] = []
+                    for _, item in trace[k].items():
+                        new_trace[key].extend(item)
+                    i = clean(new_trace[key])
+                    new_trace[key] = i
+                else:
+                    is_true_branch = self.dom_tree[parent][k_top].get('true_branch', False)
+                    # trace[parent]를 순회해서 Condition 만 가져오기 (Condition, true_branch 여부)
+                    for _, traces in trace[parent].items():
+                        for t in traces:
+                            if isinstance(t, InspectInfo) and isinstance(t.ins, Effect.Condition):
+                                # print(f"Condition: {t.effect.condition}, true_branch: {is_true_branch}")
+                                # parent_cond = t
+                                new_trace[(t, is_true_branch)] = []
+                                for _, item in trace[k].items():
+                                    new_trace[(t, is_true_branch)].extend(item)
+                                i = clean(new_trace[(t, is_true_branch)])
+                                new_trace[(t, is_true_branch)] = i
                 # print(f"0x{k:x} -> 0x{parent:x}, true_branch: {is_true_branch}")
             # else:
             #     print(f"Warning: {k} not in supernode_parent_map")

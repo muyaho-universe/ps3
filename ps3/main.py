@@ -59,6 +59,8 @@ def run_one(tests: list[TestJson]) -> list[TestResult]:
             if hunk.type == "add":
                 collect = signature_generator.generate(
                     funcname, hunk.add, "patch", hunk.add_pattern)
+                
+                co
                 if collect is None:
                     continue
                 signature = Signature.from_add(
@@ -108,7 +110,7 @@ def run_one(tests: list[TestJson]) -> list[TestResult]:
             sigs[funcname] = valid_sig(sig)
         for s in sigs[funcname]:
             s.show()
-    exit(0)
+
     testor = Test(sigs)
     if TEST_NUM >= 0:  # test specific number of tests
         if TEST_NUM == 0:

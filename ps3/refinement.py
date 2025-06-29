@@ -167,6 +167,73 @@ def refine_one(myself: list[InspectInfo], other: list[InspectInfo]) -> list[Insp
     # exit(0)
     return myself 
 
+def generalize_arg(arg):
+    """
+    인자로 들어온 expr(Effect의 인자 등)을 재귀적으로 AnySymbol로 일반화한다.
+    Binop/Unop 등은 내부 값도 재귀적으로 처리한다.
+    """
+    if isinstance(arg, Binop):
+        left = generalize_arg(arg.args[0])
+        right = generalize_arg(arg.args[1])
+        return Binop(arg.op, [left, right])
+    elif isinstance(arg, Unop):
+        inner = generalize_arg(arg.arg if hasattr(arg, 'arg') else arg.args[0])
+        return Unop(arg.op, [inner])
+    elif isinstance(arg, Const):
+        if getattr(arg, "con", 0) >= 1000000000000000000: # 보통 전역 변수 주소
+            return AnySymbol()
+        return arg
+    elif isinstance(arg, RegSymbol):
+        return RegSymbol(AnySymbol())
+    elif isinstance(arg, MemSymbol):
+        return MemSymbol(AnySymbol())
+    # 필요하다면 Load, ITE 등도 추가
+    else:
+        return arg
+
+def single_refine(myself: dict[(InspectInfo, bool):list[InspectInfo]]) -> dict[(InspectInfo, bool):list[InspectInfo]]:
+    """
+    한 쪽이 비어 있다면, 자기의 시그니처 중에 call과 condition의 내부 표현 중 메모리 주소나 Register의 offset을 모두 T로 바꿈
+    예) Call: uninit_options(18446744073709550680 + SR(48)) -> Call: uninit_options(T + SR(T))
+    """
+    # old_vuln_effect = deepcopy(vuln_effect)
+    # old_patch_effect = deepcopy(patch_effect)
+    # vuln_effect = [rebuild_effects(effect) for effect in vuln_effect]
+    # patch_effect = [rebuild_effects(effect) for effect in patch_effect]
+    old_myself = deepcopy(myself)
+    my_effects = {}
+    for key, value in myself.items():
+        key_info = key[0] 
+        old_key = deepcopy(key_info)
+        new_key_info = rebuild_effects(key_info)
+        assert new_key_info == old_key, f"Rebuild failed for key {new_key_info}\n!=\n {old_key}"
+        key = (new_key_info, key[1])  # key는 (InspectInfo, bool) 형태
+        my_effects[key] = []
+        for info in value:
+            new_info = rebuild_effects(info)
+            assert new_info == info, f"Rebuild failed for info {new_info}\n!=\n {info}"
+            my_effects[key].append(new_info)
+    # assert my_effects == old_myself, f"Rebuild failed for myself {my_effects}\n!=\n {old_myself}"
+
+    new_myself = {}
+    for key, value in my_effects.items():
+        new_value = []
+        for info in value:
+            # info.ins가 Call 또는 Condition인 경우
+            if isinstance(info.ins, Effect.Call):
+                for i, arg in enumerate(info.ins.args):
+                    info.ins.args[i] = generalize_arg(arg)
+                new_value.append(info)
+            elif isinstance(info.ins, Effect.Condition):
+                # expr의 모든 메모리 주소와 레지스터 오프셋을 T로 바꿈
+                pass
+            else:
+                new_value.append(info)
+        new_myself[key] = new_value
+
+
+    return new_myself
+
 
 def refine_sig(vuln_effect: list[InspectInfo], patch_effect: list[InspectInfo]) -> tuple[list[InspectInfo], list[InspectInfo]]:    
     old_vuln_effect = deepcopy(vuln_effect)
@@ -211,6 +278,12 @@ def refine_sig(vuln_effect: list[InspectInfo], patch_effect: list[InspectInfo]) 
 def parse_expr(expr_str):
     expr_str = expr_str.strip()
 
+    if expr_str == "True":
+        # 1 == 1을 CmpEQ64로 표현 (항상 True)
+        return Binop("Iop_CmpEQ64", [Const(1), Const(1)])
+    if expr_str == "False":
+        # 1 == 0을 CmpEQ64로 표현 (항상 False)
+        return Binop("Iop_CmpEQ64", [Const(1), Const(0)])
     # Helper: 괄호 매칭으로 내부 추출
     def extract_inner(s, prefix):
         assert s.startswith(prefix)
@@ -384,6 +457,11 @@ def rebuild_effects(effect: InspectInfo) -> InspectInfo:
     """
     InspectInfo를 받아서, str 형태 그대로 최소화된 effect로 변환합니다.
     """
+    if str(effect) == "None":
+        # None인 경우는 그냥 반환
+        return effect
+    # if str
+
     original_str = str(effect).strip().replace('\n', '')
     # temp = "Condition: If(FakeRet == 0, 0, 1)"
     # if original_str == temp:
@@ -400,6 +478,7 @@ def rebuild_effects(effect: InspectInfo) -> InspectInfo:
         reg_part = parts[0].replace("Put: ", "").strip()
         expr_part = parts[1].strip()
         reg = int(reg_part)
+        
         expr = parse_expr(expr_part)
         ret = InspectInfo(Effect.Put(reg, expr))
         if original_str != str(ret):

@@ -37,7 +37,7 @@ class InspectInfo:
     #     return hash(self.ins[0])
     
     def __hash__(self) -> int:
-        return hash(self.ins)
+        return hash(str(self))
 
     # def __eq__(self, __o: object) -> bool:
     #     if isinstance(__o, InspectInfo):

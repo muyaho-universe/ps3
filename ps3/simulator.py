@@ -13,7 +13,7 @@ from symbol_value import WildCardSymbol
 import time
 import lief # type: ignore
 from settings import *
-from refinement import refine_sig, rebuild_effects, effect_to_node
+from refinement import refine_sig, rebuild_effects, effect_to_node, single_refine
 from copy import deepcopy
 import dominator_builder
 
@@ -372,21 +372,21 @@ class Simulator:
                     for _, traces in collect[parent].items():
                         for t in traces:
                             if isinstance(t, InspectInfo) and isinstance(t.ins, Effect.Condition):
-                                # print(f"Condition: {t.effect.condition}, true_branch: {is_true_branch}")
-                                # parent_cond = t
                                 key = (t, is_true_branch)
-                                if key not in new_collect:
+                                
+                                # parent_cond = t
+                                # key = (t, is_true_branch)
+                                if key not in list(new_collect.keys()):
                                     new_collect[key] = []
                                 for _, item in collect[k].items():
-                                    if key not in new_collect:
+                                    if key not in list(new_collect.keys()):
                                         new_collect[key] = []
                                     
                                     new_collect[key].extend(item)
+                                    
                                 # i = clean(new_collect[key])
                                 # i = new_collect[key]
                                 # new_collect[key] = i
-        # print(f"new_collect: {new_collect}")
-        # exit(0)
         return new_collect
 
     # def generate(self, funcname: str, addresses: dict, patterns) -> tuple[dict, list[dict]]:
@@ -1251,26 +1251,58 @@ class Test:
         for sig in sigs:
             refined = False
             if sig.state == "vuln":
-                vuln_effect, _ = sig.serial()
+                # vuln_effect, _ = sig.serial()
+                vuln_effect = sig.collect
                 patch_effect = []
+                vuln_effect = single_refine(vuln_effect)
+                # assert vuln_effect == sig.collect, f"vuln_effect {vuln_effect} != sig.collect {sig.collect}"
                 vuln_pattern, patch_pattern = sig.patterns, Patterns([])
             elif sig.state == "patch":
                 vuln_effect = []
-                patch_effect, _ = sig.serial()
+                # patch_effect, _ = sig.serial()
+                patch_effect = sig.collect
+                patch_effect = single_refine(patch_effect)
+                # assert patch_effect == sig.collect, f"patch_effect {patch_effect} != sig.collect {sig.collect}"
+                # print(f"refined patch_effect: {patch_effect}")
                 vuln_pattern, patch_pattern = Patterns([]), sig.patterns
+
             elif sig.state == "modify":
                 if sig.sig_dict["add"] == [] and sig.sig_dict["remove"] == []:
-                    vuln_info, patch_info = sig.serial()
-                    vuln_effect, _ = vuln_info
-                    patch_effect, _ = patch_info
-                    
-                    vuln_effect = set(vuln_effect)
-                    patch_effect = set(patch_effect)
-                    
-                    vuln_effect, patch_effect = vuln_effect-patch_effect, patch_effect-vuln_effect
-                    vuln_effect = list(vuln_effect)
-                    patch_effect = list(patch_effect)
+                    # vuln_info, patch_info = sig.serial()
+                    # vuln_effect, _ = vuln_info
+                    # patch_effect, _ = patch_info
+                    # vuln_effect, patch_effect = sig.sig_dict["remove"], sig.sig_dict["add"]
+                    vuln_effect, patch_effect = sig.collect[0], sig.collect[1] # vuln_effect, patch_effect는 dict 형태
 
+                    for vuln_key, vuln_value in list(vuln_effect.items()):
+                        for patch_key, patch_value in list(patch_effect.items()):
+                            # print(f"vuln_key: {vuln_key}, vuln_value: {vuln_value}")
+                            # print(f"patch_key: {patch_key}, patch_value: {patch_value}")
+                            old_vuln_key, old_patch_key = deepcopy(vuln_key[0]), deepcopy(patch_key[0])
+                            new_vuln_key, new_patch_key =  rebuild_effects(vuln_key[0]), rebuild_effects(patch_key[0])
+                            assert new_vuln_key == old_vuln_key, f"new_vuln_key {new_vuln_key} != old_vuln_key {old_vuln_key}"
+                            assert new_patch_key == old_patch_key, f"new_patch_key {new_patch_key} != old_patch_key {old_patch_key}"
+                            vuln_key, patch_key = (new_vuln_key, vuln_key[1]) , (new_patch_key, patch_key[1])
+                            if vuln_key == patch_key:
+                                # print(f"vuln_value: {vuln_value}, patch_value: {patch_value}")
+                                v, p = list(set(vuln_value) - set(patch_value)), list(set(patch_value) - set(vuln_value))
+                                if not v and not p:
+                                    # 두 리스트가 모두 비어 있으면 key 삭제
+                                    del vuln_effect[vuln_key]
+                                    del patch_effect[patch_key]
+                                else:
+                                    # refinement
+                                    refined_v, refined_p = refine_sig(v, p)
+                                    vuln_effect[vuln_key] = refined_v
+                                    patch_effect[patch_key] = refined_p
+                    
+                    # vuln_effect = set(vuln_effect)
+                    # patch_effect = set(patch_effect)
+                    
+                    # vuln_effect, patch_effect = vuln_effect-patch_effect, patch_effect-vuln_effect
+                    # vuln_effect = list(vuln_effect)
+                    # patch_effect = list(patch_effect)
+                    
                     # TODO: 여기서 refinement
                     # if vuln_effect != [] and patch_effect != []:    
                     #     vuln_effect, patch_effect = refine_sig(vuln_effect, patch_effect)
@@ -1283,22 +1315,41 @@ class Test:
                 vuln_pattern, patch_pattern = sig.patterns[0], sig.patterns[1]
             else:
                 raise NotImplementedError(f"{sig.state} is not considered.")
+            
+            # TODO 여기서부터 어떻게 하지이이
             vuln_use_pattern, patch_use_pattern = self.use_pattern(
                 vuln_pattern), self.use_pattern(patch_pattern)
-            vuln_effect = set(vuln_effect)
-            patch_effect = set(patch_effect)
+            # vuln_effect = set(vuln_effect)
+            # patch_effect = set(patch_effect)
             
-            vuln_effect, patch_effect = vuln_effect-patch_effect, patch_effect-vuln_effect
+            # vuln_effect, patch_effect = vuln_effect-patch_effect, patch_effect-vuln_effect
             
             if len(vuln_effect) == 0 and len(patch_effect) == 0:
                 continue
             # logger.info(f"vuln_effect: {vuln_effect}")
             # logger.info(f"patch_effect: {patch_effect}")
             vuln_match, patch_match = [], []
-            all_effects = extrace_effect(traces)
-            all_effects = list(set(all_effects))
-            if refined:
-                old_effects = deepcopy(all_effects)
+            # all_effects = extrace_effect(traces)
+            all_effects = traces
+            old_effects = deepcopy(all_effects)
+            # all_effects = list(set(all_effects))
+            print(f"before rebuild all_effects: {all_effects}")
+            for k, v in list(all_effects.items()):
+                new_key = rebuild_effects(k[0])
+                try:
+                    assert new_key == k[0], f"new_key {new_key} != old_key {k[0]}"
+                except AssertionError:
+                    print(f"new_key {new_key.ins.expr}, type: {type(new_key.ins.expr)}")
+                    print(f"old_key {k[0].ins.expr}, type: {type(k[0].ins.expr)}")
+                    exit(0)
+                k = (new_key, k[1])
+
+                old_v = deepcopy(v)
+                new_v = []
+                for effect in v:
+                    new_v.append(rebuild_effects(effect))
+                assert new_v == old_v, f"new_v {new_v} != old_v {old_v}"
+                all_effects[k] = new_v
                 # temp = []
                 # for i in all_effects:
                 #     print(f"refined i: {i}")
@@ -1306,14 +1357,31 @@ class Test:
                 #     print(f"refined a: {a}")
                 #     temp.append(a)
                 # all_effects = temp
-                all_effects = [rebuild_effects(e) for e in all_effects]
-                assert all_effects == old_effects, f"all_effects {all_effects} != old_effects {old_effects}"
+                # all_effects = [rebuild_effects(e) for e in all_effects]
+            try:
+                assert all_effects == old_effects, f"all_effects {all_effects}, len(all_effects) {len(all_effects)} \n!= \nold_effects {old_effects}, len(old_effects) {len(old_effects)}"
+            except AssertionError:
+                only_in_all = set(all_effects.keys()) - set(old_effects.keys())
+                only_in_old = set(old_effects.keys()) - set(all_effects.keys())
+
+                print(f"only_in_all: {only_in_all}")
+                print(f"only_in_old: {only_in_old}")
+                print("In all effect")
+                for key in all_effects.keys():
+                    if str(key) == "(Condition: False, True)" or str(key) == "(Condition: 0, False)":
+                        print(f"key[0].ins.expr: {key[0].ins.expr}, type: {type(key[0].ins.expr)}")
+                print("In old effect")
+                for key in old_effects.keys():
+                    if str(key) == "(Condition: False, True)" or str(key) == "(Condition: 0, False)":
+                        print(f"key[0].ins.expr: {key[0].ins.expr}, type: {type(key[0].ins.expr)}")
                 # print(f"refined all_effects: {all_effects}")
-            logger.info(f"all_effects: {all_effects}") 
+            # logger.info(f"all_effects: {all_effects}") 
             # logger.info(f"all_effects: {sorted(str(InspectInfo(i)) for i in all_effects)}")
-            # exit(0)
+            print(f"\nafter rebuild all_effects: {all_effects}")
             # for effect in all_effects:
             #     logger.info(f"effect: {effect}")
+            exit(0)
+            # TODO: 테스트 할 방법 찾기
             test = False
             # essential a add patch
             if len(vuln_effect) == 0:

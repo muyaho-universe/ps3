@@ -1253,12 +1253,12 @@ class Test:
             if sig.state == "vuln":
                 # vuln_effect, _ = sig.serial()
                 vuln_effect = sig.collect
-                patch_effect = []
+                patch_effect = {}
                 vuln_effect = single_refine(vuln_effect)
                 # assert vuln_effect == sig.collect, f"vuln_effect {vuln_effect} != sig.collect {sig.collect}"
                 vuln_pattern, patch_pattern = sig.patterns, Patterns([])
             elif sig.state == "patch":
-                vuln_effect = []
+                vuln_effect = {}
                 # patch_effect, _ = sig.serial()
                 patch_effect = sig.collect
                 patch_effect = single_refine(patch_effect)
@@ -1303,7 +1303,6 @@ class Test:
                     # vuln_effect = list(vuln_effect)
                     # patch_effect = list(patch_effect)
                     
-                    # TODO: 여기서 refinement
                     # if vuln_effect != [] and patch_effect != []:    
                     #     vuln_effect, patch_effect = refine_sig(vuln_effect, patch_effect)
                     #     refined = True
@@ -1316,7 +1315,6 @@ class Test:
             else:
                 raise NotImplementedError(f"{sig.state} is not considered.")
             
-            # TODO 여기서부터 어떻게 하지이이
             vuln_use_pattern, patch_use_pattern = self.use_pattern(
                 vuln_pattern), self.use_pattern(patch_pattern)
             # vuln_effect = set(vuln_effect)
@@ -1333,7 +1331,7 @@ class Test:
             all_effects = traces
             old_effects = deepcopy(all_effects)
             # all_effects = list(set(all_effects))
-            print(f"before rebuild all_effects: {all_effects}")
+            # print(f"before rebuild all_effects: {all_effects}")
             for k, v in list(all_effects.items()):
                 new_key = rebuild_effects(k[0])
                 try:
@@ -1358,30 +1356,17 @@ class Test:
                 #     temp.append(a)
                 # all_effects = temp
                 # all_effects = [rebuild_effects(e) for e in all_effects]
-            try:
-                assert all_effects == old_effects, f"all_effects {all_effects}, len(all_effects) {len(all_effects)} \n!= \nold_effects {old_effects}, len(old_effects) {len(old_effects)}"
-            except AssertionError:
-                only_in_all = set(all_effects.keys()) - set(old_effects.keys())
-                only_in_old = set(old_effects.keys()) - set(all_effects.keys())
-
-                print(f"only_in_all: {only_in_all}")
-                print(f"only_in_old: {only_in_old}")
-                print("In all effect")
-                for key in all_effects.keys():
-                    if str(key) == "(Condition: False, True)" or str(key) == "(Condition: 0, False)":
-                        print(f"key[0].ins.expr: {key[0].ins.expr}, type: {type(key[0].ins.expr)}")
-                print("In old effect")
-                for key in old_effects.keys():
-                    if str(key) == "(Condition: False, True)" or str(key) == "(Condition: 0, False)":
-                        print(f"key[0].ins.expr: {key[0].ins.expr}, type: {type(key[0].ins.expr)}")
+            
+            assert all_effects == old_effects, f"all_effects {all_effects}, len(all_effects) {len(all_effects)} \n!= \nold_effects {old_effects}, len(old_effects) {len(old_effects)}"
+            
                 # print(f"refined all_effects: {all_effects}")
             # logger.info(f"all_effects: {all_effects}") 
             # logger.info(f"all_effects: {sorted(str(InspectInfo(i)) for i in all_effects)}")
-            print(f"\nafter rebuild all_effects: {all_effects}")
+            logger.info(f"after rebuild all_effects: {all_effects}")
             # for effect in all_effects:
             #     logger.info(f"effect: {effect}")
-            exit(0)
-            # TODO: 테스트 할 방법 찾기
+            
+            
             test = False
             # essential a add patch
             if len(vuln_effect) == 0:
@@ -1390,22 +1375,61 @@ class Test:
                 # for i in range(temp):
                 #     patch_effect = list(patch_effect)  # 리스트로 변환
                 #     patch = patch_effect[temp-i-1]
-                for patch in patch_effect:
-                    # if (patch.ins[0] == "Condition" or patch.ins[0] == "Call") and patch not in all_effects:
-                    if isinstance(patch.ins, (Effect.Condition, Effect.Call)) and patch not in all_effects:
-                        test = True
-                        result.append("vuln")
-                        break
+                for patch_key, patch_value in patch_effect.items():
+                    # for patch in patch_effect:
+                    #     if (patch.ins[0] == "Condition" or patch.ins[0] == "Call") and patch not in all_effects:
+                    for pv in patch_value:
+                        # print(f"patch_value: {pv} and patch_key: {patch_key}")
+                        if isinstance(pv.ins, (Effect.Condition, Effect.Call)):
+                            if patch_key not in all_effects:
+                                logger.info(f"patch {patch_key} is not in all_effects; {all_effects.keys()}")
+                                test = True
+                                result.append("vuln")
+                                break
+                            else:
+                                if pv not in all_effects[patch_key]:
+                                    test = True
+                                    logger.info(f"all_effects[{patch_key}] does not contain {pv}; {all_effects[patch_key]}")
+                                    result.append("vuln")
+                                    break
+                        # if isinstance(pv.ins, (Effect.Condition, Effect.Call)) and patch_key in all_effects and pv not in all_effects[patch_key]:
+                        #     test = True
+                        #     # logger.info(f"patch {pv} is not in all_effects")
+                        #     print(f"patch {patch_key}: {pv} is not in all_effects")
+                        #     result.append("vuln")
+                        #     break
+                # for patch in patch_effect:
+                #     # if (patch.ins[0] == "Condition" or patch.ins[0] == "Call") and patch not in all_effects:
+                #     if isinstance(patch.ins, (Effect.Condition, Effect.Call)) and patch not in all_effects:
+                #         test = True
+                #         result.append("vuln")
+                #         break
             # essential a vuln patch
             if len(patch_effect) == 0:
                 # logger.info("pure deletion")
-                for vuln in vuln_effect:
-                    # if (vuln.ins[0] == "Condition" or vuln.ins[0] == "Call") and vuln not in all_effects:
-                    if isinstance(vuln.ins, (Effect.Condition, Effect.Call)) and vuln not in all_effects:
-                        test = True
-                        # logger.info(f"vuln {vuln} is not in all_effects")
-                        result.append("patch")
-                        break
+                for vuln_key, vuln_value in vuln_effect.items():
+                    for vv in vuln_value:
+                        # for vuln in vuln_effect:
+                        #     if (vuln.ins[0] == "Condition" or vuln.ins[0] == "Call") and vuln not in all_effects:
+                        if isinstance(vv.ins, (Effect.Condition, Effect.Call)):
+                            if vuln_key not in all_effects:
+                                logger.info(f"vuln {vuln_key} is not in all_effects; {all_effects.keys()}")
+                                test = True
+                                result.append("patch")
+                                break
+                            else:
+                                if vv not in all_effects[vuln_key]:
+                                    test = True
+                                    logger.info(f"all_effects[{vuln_key}] does not contain {vv}; {all_effects[vuln_key]}")
+                                    result.append("patch")
+                                    break
+                # for vuln in vuln_effect:
+                #     # if (vuln.ins[0] == "Condition" or vuln.ins[0] == "Call") and vuln not in all_effects:
+                #     if isinstance(vuln.ins, (Effect.Condition, Effect.Call)) and vuln not in all_effects:
+                #         test = True
+                #         # logger.info(f"vuln {vuln} is not in all_effects")
+                #         result.append("patch")
+                #         break
             # else:
             #     logger.info("modify")
             if test:
@@ -1417,16 +1441,24 @@ class Test:
             #     if ae in patch_effect:
             #         # logger.info(f"patch {ae} is in patch_effect")
             #         patch_match.append(ae)
-            for vuln in vuln_effect:
-                if vuln in all_effects:
-                    vuln_match.append(vuln)
-            for patch in patch_effect:                
-                if patch in all_effects:
-                    # for i in all_effects:
-                    #     if i == patch:
-                    #         logger.info(f"patch {i} is in all_effects")
-                    #         i.show_eq(patch)
-                    patch_match.append(patch)
+
+            # TODO: 테스트 할 방법 찾기
+            # for vuln in vuln_effect:
+            #     if vuln in all_effects:
+            #         vuln_match.append(vuln)
+            for vuln_key, vuln_value in vuln_effect.items():
+                if vuln_key in all_effects:
+                    for vv in vuln_value:
+                        if vv in all_effects[vuln_key]:
+                            vuln_match.append(vv)
+            # for patch in patch_effect:                
+            #     if patch in all_effects:
+            #         patch_match.append(patch)
+            for patch_key, patch_value in patch_effect.items():
+                if patch_key in all_effects:
+                    for pv in patch_value:
+                        if pv in all_effects[patch_key]:
+                            patch_match.append(pv)
             logger.info(f"vuln match {vuln_match}, patch match {patch_match}")
             # exit(0)
             # If the pattern is If, then we should check there at least one condition in matched effect

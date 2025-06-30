@@ -138,7 +138,7 @@ def run_one(tests: list[TestJson]) -> list[TestResult]:
         return test_results
     for test in tests:  # test all tests
         start = time.time()
-        logger.info(f"{test.file} truth is {test.ground_truth}")
+        logger.info(f"\n{test.file} truth is {test.ground_truth}")
         one_result = testor.test_path(
             f"{BINARY_PATH}/{test.project}/{test.file}")
         if one_result is None:
@@ -180,7 +180,7 @@ if __name__ == "__main__":
     start = time.time()
     run_all()
     end = time.time()
-    print("time: ", end - start)
-    print("min_time: ", min_time)
-    print("max_time: ", max_time)
-    print("max_project: ", max_project)
+    logger.info(f"time: {end - start}")
+    logger.info(f"min_time: {min_time}")
+    logger.info(f"max_time: {max_time}")
+    logger.info(f"max_project: {max_project}")

@@ -32,7 +32,7 @@ DIFF_PATH= os.path.join(HDD_PATH, 'original_diff')
 # TEST_FILE= os.path.join(HDD_PATH, 'test_FFmpeg_new.jsonl')
 TEST_FILE= os.path.join(HDD_PATH, 'test_FFmpeg.jsonl')
 BINARY_PATH = os.path.join(HDD_PATH, 'ps3_original_binary')
-LOG_PATH = os.path.join(ROOT_PATH, "ps3",'log_FFmpeg.txt')
+LOG_PATH = os.path.join(ROOT_PATH, "ps3",'log4time.txt')
 SRC_PATH = os.path.join(HDD_PATH, 'source')
 CVE_FILE = os.path.join(HDD_PATH, 'new_CVE_info.jsonl')
 

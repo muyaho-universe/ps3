@@ -350,9 +350,7 @@ def parse_expr(expr_str):
         return ret
         # return ITE(parse_expr(args[0]), parse_expr(args[1]), parse_expr(args[2]))
 
-    # Binop: 가장 바깥의 +만 분리
-    # 연산자 우선순위: 괄호 깊이 0에서 오른쪽부터 차례로 분리
-    # Binop: 괄호 깊이 0에서 연산자 분리
+    # Binop: +, -, 등 n-항 연산자에 대해 오른쪽 결합으로 재귀 파싱
     binops = [
         (" == ", "Iop_CmpEQ64"),
         (" != ", "Iop_CmpNE64"),
@@ -367,30 +365,23 @@ def parse_expr(expr_str):
         (" - ", "Iop_Sub64"),
     ]
     for op_str, op_name in binops:
+        # 괄호 깊이 0에서 op_str로 split
         depth = 0
+        split_indices = []
         for i in range(len(expr_str) - len(op_str) + 1):
             if expr_str[i] == '(':
                 depth += 1
             elif expr_str[i] == ')':
                 depth -= 1
             elif expr_str[i:i+len(op_str)] == op_str and depth == 0:
-                left = expr_str[:i]
-                right = expr_str[i+len(op_str):]
-
-                # left_expr = parse_expr(left)
-                # right_expr = parse_expr(right)
-
-                # if not isinstance(left_expr, IRExpr):
-                #     left_expr = Unop("Iop_64to32", [left_expr])
-                # if not isinstance(right_expr, IRExpr):
-                #     right_expr = Unop("Iop_64to32", [right_expr])
-
-                # ret = Binop(op_name, [left_expr, right_expr])
-                # print(f"parse_expr: Binop found: {op_name} with left: {left} and right: {right} and ret: {ret}")
-                ret = Binop(op_name, [parse_expr(left), parse_expr(right)])
-                # print(f"parse_expr: Binop found: {op_name} with left: {left} and right: {right} and ret: {ret}")
-                # return Binop(op_name, [parse_expr(left), parse_expr(right)])
-                return ret
+                split_indices.append(i)
+        if split_indices:
+            # 오른쪽 결합: 마지막 연산자를 기준으로 분리
+            idx = split_indices[-1]
+            left = expr_str[:idx]
+            right = expr_str[idx+len(op_str):]
+            return Binop(op_name, [parse_expr(left), parse_expr(right)])
+    # ...이하 기존 코드...
 
     # 단항 연산자: ~
     if expr_str.startswith("~"):
@@ -460,91 +451,87 @@ def rebuild_effects(effect: InspectInfo) -> InspectInfo:
     if str(effect) == "None":
         # None인 경우는 그냥 반환
         return effect
-    # if str
 
-    original_str = str(effect).strip().replace('\n', '')
-    # temp = "Condition: If(FakeRet == 0, 0, 1)"
-    # if original_str == temp:
-    #     print(f"effect.ins.expr.cond: {effect.ins.expr.args[0].args[0].args[0].args[0].args[0].args[0].con.name}, type: {type(effect.ins.expr.args[0].args[0].args[0].args[0].args[0].args[0].con.name)}")
-    #     exit(1)
+    original_str = str(effect).replace('\n', '').strip()
     concat = "Concat"
     hat = "^"
     extract = "Extract"
     if concat in original_str or hat in original_str or extract in original_str:
         # Concat이나 ^가 있는 경우는 처리하지 않음
         return effect
-    if "Put: " in original_str:
-        parts = original_str.split(" = ")
-        reg_part = parts[0].replace("Put: ", "").strip()
-        expr_part = parts[1].strip()
-        reg = int(reg_part)
-        
-        expr = parse_expr(expr_part)
-        ret = InspectInfo(Effect.Put(reg, expr))
-        if original_str != str(ret):
-            print(f"Rebuild failed for Put: {original_str} != {str(ret)}")
+    try:
+        if "Put: " in original_str:
+            parts = original_str.split(" = ")
+            reg_part = parts[0].replace("Put: ", "").strip()
+            expr_part = parts[1].strip()
+            reg = int(reg_part)
+            expr = parse_expr(expr_part)
+            ret = InspectInfo(Effect.Put(reg, expr))
+            if normalize_str(original_str) != normalize_str(str(ret)):
+                print(f"Rebuild failed for Put: {original_str} != {str(ret)}")
+                print(f"effect.ins.expr: {effect.ins.expr}")
+                exit(1)
+            return ret
+        elif "Call: " in original_str:
+            m = re.match(r"Call: ([^(]+)\((.*)\)", original_str)
+            if not m:
+                raise ValueError(f"Cannot parse Call: {original_str}")
+            name = m.group(1).strip()
+            args_str = m.group(2).strip()
+            args = []
+            current = ""
+            depth = 0
+            for ch in args_str:
+                if ch == "," and depth == 0:
+                    if current.strip():
+                        args.append(current.strip())
+                    current = ""
+                else:
+                    if ch == "(":
+                        depth += 1
+                    elif ch == ")":
+                        depth -= 1
+                    current += ch
+            if current.strip():
+                args.append(current.strip())
+            args = [parse_expr(a) for a in args]
+            ret = InspectInfo(Effect.Call(name, args))
+            if normalize_str(original_str) != normalize_str(str(ret)):
+                print(f"Rebuild failed for Call: {original_str} != {str(ret)}")
+                exit(1)
+            return ret
+        elif "Condition: " in original_str:
+            expr_part = original_str.replace("Condition: ", "").strip()
+            expr = parse_expr(expr_part)
+            ret = InspectInfo(Effect.Condition(expr))
+            if normalize_str(original_str) != normalize_str(str(ret)):
+                print(f"Rebuild failed for Condition: {original_str} != {str(ret)}")
+                exit(1)
+            return ret
+        elif "Return: " in original_str:
+            expr_part = original_str.replace("Return: ", "").strip()
+            expr = parse_expr(expr_part)
+            ret = InspectInfo(Effect.Return(expr))
+            if normalize_str(original_str) != normalize_str(str(ret)):
+                print(f"Rebuild failed for Return: {original_str} != {str(ret)}")
+                exit(1)
+            return ret
+        elif "Store: " in original_str:
+            parts = original_str.split(" = ")
+            addr_part = parts[0].replace("Store: ", "").strip()
+            expr_part = parts[-1].strip()
+            addr = parse_expr(addr_part)
+            expr = parse_expr(expr_part)
+            ret = InspectInfo(Effect.Store(addr, expr))
+            if normalize_str(original_str) != normalize_str(str(ret)):
+                print(f"Rebuild failed for Store: {original_str} != {str(ret)}")
+                exit(1)
+            return ret
+        else:
+            print(f"Unknown effect format: {original_str}")
             exit(1)
-        return ret
-    elif "Call: " in original_str:
-        # Call: name(arg1, arg2, ...)
-        m = re.match(r"Call: ([^(]+)\((.*)\)", original_str)
-        if not m:
-            raise ValueError(f"Cannot parse Call: {original_str}")
-        name = m.group(1).strip()
-        args_str = m.group(2).strip()
-        # 괄호 깊이 기반 인자 분리
-        args = []
-        current = ""
-        depth = 0
-        for ch in args_str:
-            if ch == "," and depth == 0:
-                if current.strip():
-                    args.append(current.strip())
-                current = ""
-            else:
-                if ch == "(":
-                    depth += 1
-                elif ch == ")":
-                    depth -= 1
-                current += ch
-        if current.strip():
-            args.append(current.strip())
-        args = [parse_expr(a) for a in args]
-        ret = InspectInfo(Effect.Call(name, args))
-        if original_str != str(ret):
-            print(f"Rebuild failed for Call: {original_str} != {str(ret)}")
-            exit(1)
-        return ret
-    elif "Condition: " in original_str:
-        expr_part = original_str.replace("Condition: ", "").strip()
-        expr = parse_expr(expr_part)
-        ret = InspectInfo(Effect.Condition(expr))
-        if original_str != str(ret):
-            print(f"Rebuild failed for Condition: {original_str} != {str(ret)}")
-            exit(1)
-        return ret
-    elif "Return: " in original_str:
-        expr_part = original_str.replace("Return: ", "").strip()
-        expr = parse_expr(expr_part)
-        ret = InspectInfo(Effect.Return(expr))
-        if original_str != str(ret):
-            print(f"Rebuild failed for Return: {original_str} != {str(ret)}")
-            exit(1)
-        return ret
-    elif "Store: " in original_str:
-        parts = original_str.split(" = ")
-        addr_part = parts[0].replace("Store: ", "").strip()
-        expr_part = parts[-1].strip()
-        addr = parse_expr(addr_part)
-        expr = parse_expr(expr_part)
-        ret = InspectInfo(Effect.Store(addr, expr))
-        if original_str != str(ret):
-            print(f"Rebuild failed for Store: {original_str} != {str(ret)}")
-            exit(1)
-        return ret
-    else:
-        print(f"Unknown effect format: {original_str}")
-        exit(1)
+    except Exception as e:
+        print(f"rebuild_effects: 파싱 실패: {effect}, original_str: {original_str}, error: {e}")
 
 def simplify_addr_expr(expr):
     """
@@ -831,3 +818,7 @@ def node_to_effect(node: Node, fallback_effect: Effect = None) -> Effect:
 
     else:
         raise ValueError(f"Unknown effect node: {label}")
+
+def normalize_str(s: str) -> str:
+    # 모든 공백 문자(\n, \r, \t, 스페이스 등)를 제거
+    return "".join(s.split())

@@ -80,79 +80,16 @@ def abstraction_score(node: Node) -> int:
 
 
 def refine_one(myself: list[InspectInfo], other: list[InspectInfo]) -> list[InspectInfo]:
-    result = []
     for i, info in enumerate(myself):
         effect = deepcopy(info.ins) 
         temp = []
-        count = 0
         go = True
         # print("go into other with info:", info)
         root = effect_to_node(info.ins)
         for generalized_tree in tree_possible_subs(root, fallback_effect=effect):
-            # try:
-            #     new_effect = generalized_tree
-            # except ValueError as e:
-            #     print(f"Error converting node to effect: {e}, node: {generalized_tree.print()}")
-            #     exit(1)
             new_effect = generalized_tree   
             new_info = InspectInfo(new_effect)
             temp.append(new_info)
-
-            # if isinstance(new_info.ins, Effect.Call):
-
-            # if count < 2  and  isinstance(effect, Effect.Put):
-                
-            #     count += 1
-            # else:
-            t = "Call: bn_wexpand(FakeRet(T), T)"
-            t2 = "Call: bn_wexpand(T, 1 + T)"
-            # print(f"new_info: {new_info} {str(new_info) == t }") # Put: 32 = 2 + FakeRet(bn_get_top)
-            # if str(new_info) == t:
-            #     print(other)
-            #     for item in other:
-            #         print(f"item: {item} {str(item) == t2}") # Put: 32 = 2 + FakeRet(bn_get_top)
-            #         if str(item) == t2:
-            # #     # print("other:", other) # Put: 64 = 2 + FakeRet(bn_get_top), Put: 32 = 2 + FakeRet(bn_get_top), Call: bn_wexpand(FakeRet(BN_CTX_get), 2 + FakeRet(bn_get_top))
-            #             print("==========RALO==========")
-            #             print(f"Found: {new_info} and {item}") # True
-            #             r1 = effect_to_node(new_info.ins)
-            #             r2 = effect_to_node(item.ins)
-            #             print("-" * 50)
-            #             # print(f"r1: {r1.print()}")
-            #             r1.print()
-            #             print("-" * 50)
-            #             # print(f"r2: {r2.print()}")
-            #             r2.print()
-            #             print("-" * 50)
-            #             # print(f"type({item.ins.expr.args[1].con}): {type(item.ins.expr.args[1].con)}") # <class 'inspect_info.InspectInfo'>
-            #             print(f"new_info == item: {new_info == item}") # True
-            #             print("==========RALO==========")
-            #             exit(1)
-
-            # if str(new_info) == "Put: 32 = 1 + FakeRet(T)":
-            #     for item in other:
-            #         if str(item) == "Put: 32 = 2 + FakeRet(bn_get_top)":
-            #             print("==========RALO==========")
-            #             print(f"Found: {new_info} and {item}") # False
-            #             r1 = effect_to_node(new_info.ins)
-            #             r2 = effect_to_node(item.ins)
-            #             print("-" * 50)
-            #             # print(f"r1: {r1.print()}")
-            #             r1.print()
-            #             print("-" * 50)
-            #             # print(f"r2: {r2.print()}")
-            #             r2.print()
-            #             print("-" * 50)
-            #             print(f"new_info == item: {new_info == item}") # False
-            #             print("==========RALO==========")
-            #             if go:
-            #                 go = False
-            #             else:
-            #                 exit(1)
-            #     # print(f"type(new_info.ins.expr.args[0]): {type(new_info.ins.expr.args[0])}")
-            #     # print(f"type(item.ins.expr.args[0]): {type(item.ins.expr.args[0])} {item.ins.expr.args[0]}")
-            #     exit(1)
-            # print("go into other with new_info:", new_info)
 
             if go and new_info not in other :
                 # print(f"refine_one: {new_info} not in other")
@@ -160,11 +97,6 @@ def refine_one(myself: list[InspectInfo], other: list[InspectInfo]) -> list[Insp
                 go = False
                 break  # 다른 효과와 겹치지 않는 첫 번째 generalized_tree를 찾으면 중단
 
-                
-        
-    #     result.append(temp)
-    # print(f"refine result: {result}")
-    # exit(0)
     return myself 
 
 def generalize_arg(arg):

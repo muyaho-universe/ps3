@@ -180,14 +180,33 @@ def generalize_arg(arg):
         inner = generalize_arg(arg.arg if hasattr(arg, 'arg') else arg.args[0])
         return Unop(arg.op, [inner])
     elif isinstance(arg, Const):
-        if getattr(arg, "con", 0) >= 1000000000000000000: # 보통 전역 변수 주소
+        con_val = arg.con
+        if hasattr(con_val, "value"):
+            con_val = con_val.value
+        if isinstance(con_val, str):
+            # 문자열이면 비교하지 않음
+            return arg
+        if con_val >= 1000000000000000000: # 보통 전역 변수 주소
             return AnySymbol()
         return arg
     elif isinstance(arg, RegSymbol):
         return RegSymbol(AnySymbol())
     elif isinstance(arg, MemSymbol):
-        return MemSymbol(AnySymbol())
-    # 필요하다면 Load, ITE 등도 추가
+        inner = generalize_arg(arg.address)
+        return MemSymbol(inner)
+    elif isinstance(arg, ReturnSymbol):
+        inner = generalize_arg(arg.name)
+        return ReturnSymbol(inner)
+    elif isinstance(arg, WildCardSymbol):
+        return WildCardSymbol()
+    elif isinstance(arg, AnySymbol):
+        return AnySymbol()
+    elif isinstance(arg, ITE):
+        cond = generalize_arg(arg.cond)
+        iftrue = generalize_arg(arg.iftrue)
+        iffalse = generalize_arg(arg.iffalse)
+        return ITE(cond, iftrue, iffalse)
+    
     else:
         return arg
 
@@ -218,17 +237,23 @@ def single_refine(myself: dict[(InspectInfo, bool):list[InspectInfo]]) -> dict[(
     new_myself = {}
     for key, value in my_effects.items():
         new_value = []
+        key_info = key[0]
+        # key_info.ins는 언제나 Condition 또는 Call이므로, 그 안의 expr를 T로 바꿔야 함
+        if isinstance(key_info.ins, Effect.Condition):
+            key_info.ins.expr = generalize_arg(key_info.ins.expr)
+        key = (key_info, key[1])  # key는 (InspectInfo, bool) 형태
+
         for info in value:
             # info.ins가 Call 또는 Condition인 경우
             if isinstance(info.ins, Effect.Call):
                 for i, arg in enumerate(info.ins.args):
                     info.ins.args[i] = generalize_arg(arg)
-                new_value.append(info)
+                
             elif isinstance(info.ins, Effect.Condition):
                 # expr의 모든 메모리 주소와 레지스터 오프셋을 T로 바꿈
-                pass
-            else:
-                new_value.append(info)
+                info.ins.expr = generalize_arg(info.ins.expr)
+
+            new_value.append(info)
         new_myself[key] = new_value
 
 

@@ -1256,6 +1256,7 @@ class Test:
                 patch_effect = {}
                 vuln_effect = single_refine(vuln_effect)
                 # assert vuln_effect == sig.collect, f"vuln_effect {vuln_effect} != sig.collect {sig.collect}"
+                print(f"refined vuln_effect: {vuln_effect}")
                 vuln_pattern, patch_pattern = sig.patterns, Patterns([])
             elif sig.state == "patch":
                 vuln_effect = {}
@@ -1263,7 +1264,7 @@ class Test:
                 patch_effect = sig.collect
                 patch_effect = single_refine(patch_effect)
                 # assert patch_effect == sig.collect, f"patch_effect {patch_effect} != sig.collect {sig.collect}"
-                # print(f"refined patch_effect: {patch_effect}")
+                print(f"refined patch_effect: {patch_effect}")
                 vuln_pattern, patch_pattern = Patterns([]), sig.patterns
 
             elif sig.state == "modify":

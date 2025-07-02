@@ -422,7 +422,7 @@ def rebuild_effects(effect: InspectInfo) -> InspectInfo:
             reg_part = parts[0].replace("Put: ", "").strip()
             expr_part = parts[1].strip()
             reg = int(reg_part)
-            expr = parse_expr(expr_part)
+            expr = parse_expr(normalize_str(expr_part))
             ret = InspectInfo(Effect.Put(reg, expr))
             if normalize_str(original_str) != normalize_str(str(ret)):
                 print(f"Rebuild failed for Put: {original_str} != {str(ret)}")
@@ -451,7 +451,7 @@ def rebuild_effects(effect: InspectInfo) -> InspectInfo:
                     current += ch
             if current.strip():
                 args.append(current.strip())
-            args = [parse_expr(a) for a in args]
+            args = [parse_expr(normalize_str(a)) for a in args]
             ret = InspectInfo(Effect.Call(name, args))
             if normalize_str(original_str) != normalize_str(str(ret)):
                 print(f"Rebuild failed for Call: {original_str} != {str(ret)}")
@@ -459,7 +459,7 @@ def rebuild_effects(effect: InspectInfo) -> InspectInfo:
             return ret
         elif "Condition: " in original_str:
             expr_part = original_str.replace("Condition: ", "").strip()
-            expr = parse_expr(expr_part)
+            expr = parse_expr(normalize_str(expr_part))
             ret = InspectInfo(Effect.Condition(expr))
             if normalize_str(original_str) != normalize_str(str(ret)):
                 print(f"Rebuild failed for Condition: {original_str} != {str(ret)}")
@@ -467,7 +467,7 @@ def rebuild_effects(effect: InspectInfo) -> InspectInfo:
             return ret
         elif "Return: " in original_str:
             expr_part = original_str.replace("Return: ", "").strip()
-            expr = parse_expr(expr_part)
+            expr = parse_expr(normalize_str(expr_part))
             ret = InspectInfo(Effect.Return(expr))
             if normalize_str(original_str) != normalize_str(str(ret)):
                 print(f"Rebuild failed for Return: {original_str} != {str(ret)}")
@@ -477,8 +477,8 @@ def rebuild_effects(effect: InspectInfo) -> InspectInfo:
             parts = original_str.split(" = ")
             addr_part = parts[0].replace("Store: ", "").strip()
             expr_part = parts[-1].strip()
-            addr = parse_expr(addr_part)
-            expr = parse_expr(expr_part)
+            addr = parse_expr(normalize_str(addr_part))
+            expr = parse_expr(normalize_str(expr_part))
             ret = InspectInfo(Effect.Store(addr, expr))
             if normalize_str(original_str) != normalize_str(str(ret)):
                 print(f"Rebuild failed for Store: {original_str} != {str(ret)}")

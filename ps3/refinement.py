@@ -283,43 +283,24 @@ def parse_expr(expr_str):
     # T (AnySymbol)
     if expr_str == "T":
         return AnySymbol()
-    # If
-    if expr_str.startswith("If(") and expr_str.endswith(")"):
-        # 괄호 매칭으로 내부 추출
-        inner = expr_str[3:-1]
-        args = []
-        depth = 0
-        last = 0
-        for i, ch in enumerate(inner):
-            if ch == '(':
-                depth += 1
-            elif ch == ')':
-                depth -= 1
-            elif ch == ',' and depth == 0:
-                args.append(inner[last:i].strip())
-                last = i+1
-        args.append(inner[last:].strip())
-        if len(args) != 3:
-            raise ValueError(f"If() must have 3 arguments: {expr_str}")
-        # print(f"parse_expr: If() args[0]: {args[0]}")
-        ret = ITE(parse_expr(args[0]), parse_expr(args[2]), parse_expr(args[1]))
-        # print(f"parse_expr: ITE found: ITE:{ret}, InsepctInfo: {InspectInfo(Effect.Condition(ret))}")
-        return ret
-        # return ITE(parse_expr(args[0]), parse_expr(args[1]), parse_expr(args[2]))
-
-    # Binop: +, -, 등 n-항 연산자에 대해 오른쪽 결합으로 재귀 파싱
     binops = [
-        (" == ", "Iop_CmpEQ64"),
-        (" != ", "Iop_CmpNE64"),
-        (" <= ", "Iop_CmpLE64S"),
-        (" >= ", "Iop_CmpGE64S"),
-        (" < ", "Iop_CmpLT64S"),
-        (" > ", "Iop_CmpGT64S"),
-        (" | ", "Iop_Or64"),
-        (" ^~ ", "Iop_XorNot64"),
-        (" ^ ", "Iop_Xor64"),
-        (" + ", "Iop_Add64"),
-        (" - ", "Iop_Sub64"),
+        ("==", "Iop_CmpEQ64"),
+        ("!=", "Iop_CmpNE64"),
+        ("<=", "Iop_CmpLE64S"),
+        (">=", "Iop_CmpGE64S"),
+        ("<", "Iop_CmpLT64S"),
+        (">", "Iop_CmpGT64S"),
+        ("|", "Iop_Or64"),
+        ("^~", "Iop_XorNot64"),
+        ("^", "Iop_Xor64"),
+        ("+", "Iop_Add64"),
+        ("-", "Iop_Sub64"),
+        ("*", "Iop_Mul64"),
+        ("/", "Iop_Div64S"),
+        ("%", "Iop_Mod64S"),
+        ("&", "Iop_And64"),
+        ("<<", "Iop_Shl64"),
+        (">>", "Iop_Shr64S"),
     ]
     for op_str, op_name in binops:
         # 괄호 깊이 0에서 op_str로 split
@@ -338,7 +319,57 @@ def parse_expr(expr_str):
             left = expr_str[:idx]
             right = expr_str[idx+len(op_str):]
             return Binop(op_name, [parse_expr(left), parse_expr(right)])
-    # ...이하 기존 코드...
+    # If
+    if expr_str.startswith("If(") and expr_str.endswith(")"):
+        # 괄호 매칭으로 내부 추출
+        inner = expr_str[3:-1]
+        args = []
+        depth = 0
+        last = 0
+        for i, ch in enumerate(inner):
+            if ch == '(':
+                depth += 1
+            elif ch == ')':
+                depth -= 1
+            elif ch == ',' and depth == 0:
+                args.append(inner[last:i].strip())
+                last = i + 1
+        args.append(inner[last:].strip())
+
+        if len(args) != 3:
+            raise ValueError(f"If() must have 3 arguments: {expr_str}")
+        ret = ITE(parse_expr(args[0]), parse_expr(args[2]), parse_expr(args[1]))
+        # print(f"parse_expr: ITE found: ITE:{ret}, InsepctInfo: {InspectInfo(Effect.Condition(ret))}")
+        return ret
+        # return ITE(parse_expr(args[0]), parse_expr(args[1]), parse_expr(args[2]))
+
+    # Binop: +, -, 등 n-항 연산자에 대해 오른쪽 결합으로 재귀 파싱
+    # binops = [
+    #     (" == ", "Iop_CmpEQ64"),
+    #     (" != ", "Iop_CmpNE64"),
+    #     (" <= ", "Iop_CmpLE64S"),
+    #     (" >= ", "Iop_CmpGE64S"),
+    #     (" < ", "Iop_CmpLT64S"),
+    #     (" > ", "Iop_CmpGT64S"),
+    #     (" | ", "Iop_Or64"),
+    #     (" ^~ ", "Iop_XorNot64"),
+    #     (" ^ ", "Iop_Xor64"),
+    #     (" + ", "Iop_Add64"),
+    #     (" - ", "Iop_Sub64"),
+    # ]
+    
+    # for op_str, op_name in binops:
+    #     depth = 0
+    #     # 오른쪽에서 왼쪽으로 탐색
+    #     for i in range(len(expr_str) - len(op_str), -1, -1):
+    #         if expr_str[i] == ')':
+    #             depth -= 1   # 수정: 오른쪽에서 왼쪽으로 탐색 시 감소
+    #         elif expr_str[i] == '(':
+    #             depth += 1   # 수정: 오른쪽에서 왼쪽으로 탐색 시 증가
+    #         elif depth == 0 and expr_str[i:i+len(op_str)] == op_str:
+    #             left = expr_str[:i]
+    #             right = expr_str[i+len(op_str):]
+    #             return Binop(op_name, [parse_expr(left), parse_expr(right)])
 
     # 단항 연산자: ~
     if expr_str.startswith("~"):
@@ -488,7 +519,7 @@ def rebuild_effects(effect: InspectInfo) -> InspectInfo:
             print(f"Unknown effect format: {original_str}")
             exit(1)
     except Exception as e:
-        print(f"rebuild_effects: 파싱 실패: {effect}, original_str: {original_str}, error: {e}")
+        print(f"rebuild_effects: 파싱 실패: {effect}, original_str: {normalize_str(original_str)}, error: {e}")
 
 def simplify_addr_expr(expr):
     """

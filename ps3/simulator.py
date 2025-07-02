@@ -858,6 +858,7 @@ class Signature:
             logger.info("------------------------------------------")
             for v in value:
                 logger.info(v)
+            logger.info("------------------------------------------")
         # print("=========================================")
         logger.info("=========================================")
 
@@ -1376,14 +1377,14 @@ class Test:
                 # for i in range(temp):
                 #     patch_effect = list(patch_effect)  # 리스트로 변환
                 #     patch = patch_effect[temp-i-1]
+                key_len = len(patch_effect)
+                miss_key = 0
                 for patch_key, patch_value in patch_effect.items():
-                    # for patch in patch_effect:
-                    #     if (patch.ins[0] == "Condition" or patch.ins[0] == "Call") and patch not in all_effects:
                     for pv in patch_value:
-                        # print(f"patch_value: {pv} and patch_key: {patch_key}")
                         if isinstance(pv.ins, (Effect.Condition, Effect.Call)):
                             if patch_key not in all_effects:
                                 logger.info(f"patch {patch_key} is not in all_effects; {all_effects.keys()}")
+                                miss_key += 1
                                 test = True
                                 result.append("vuln")
                                 break
@@ -1393,25 +1394,12 @@ class Test:
                                     logger.info(f"all_effects[{patch_key}] does not contain {pv}; {all_effects[patch_key]}")
                                     result.append("vuln")
                                     break
-                        # if isinstance(pv.ins, (Effect.Condition, Effect.Call)) and patch_key in all_effects and pv not in all_effects[patch_key]:
-                        #     test = True
-                        #     # logger.info(f"patch {pv} is not in all_effects")
-                        #     print(f"patch {patch_key}: {pv} is not in all_effects")
-                        #     result.append("vuln")
-                        #     break
-                # for patch in patch_effect:
-                #     # if (patch.ins[0] == "Condition" or patch.ins[0] == "Call") and patch not in all_effects:
-                #     if isinstance(patch.ins, (Effect.Condition, Effect.Call)) and patch not in all_effects:
-                #         test = True
-                #         result.append("vuln")
-                #         break
+
             # essential a vuln patch
             if len(patch_effect) == 0:
-                # logger.info("pure deletion")
+                
                 for vuln_key, vuln_value in vuln_effect.items():
                     for vv in vuln_value:
-                        # for vuln in vuln_effect:
-                        #     if (vuln.ins[0] == "Condition" or vuln.ins[0] == "Call") and vuln not in all_effects:
                         if isinstance(vv.ins, (Effect.Condition, Effect.Call)):
                             if vuln_key not in all_effects:
                                 logger.info(f"vuln {vuln_key} is not in all_effects; {all_effects.keys()}")
@@ -1424,24 +1412,8 @@ class Test:
                                     logger.info(f"all_effects[{vuln_key}] does not contain {vv}; {all_effects[vuln_key]}")
                                     result.append("patch")
                                     break
-                # for vuln in vuln_effect:
-                #     # if (vuln.ins[0] == "Condition" or vuln.ins[0] == "Call") and vuln not in all_effects:
-                #     if isinstance(vuln.ins, (Effect.Condition, Effect.Call)) and vuln not in all_effects:
-                #         test = True
-                #         # logger.info(f"vuln {vuln} is not in all_effects")
-                #         result.append("patch")
-                #         break
-            # else:
-            #     logger.info("modify")
             if test:
                 continue
-            # for ae in all_effects:
-            #     if ae in vuln_effect:
-            #         # logger.info(f"vuln {ae} is in vuln_effect")
-            #         vuln_match.append(ae)
-            #     if ae in patch_effect:
-            #         # logger.info(f"patch {ae} is in patch_effect")
-            #         patch_match.append(ae)
 
             # TODO: 테스트 할 방법 찾기
             # for vuln in vuln_effect:

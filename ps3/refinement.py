@@ -180,12 +180,12 @@ def single_refine(myself: dict[(InspectInfo, bool):list[InspectInfo]]) -> dict[(
             if isinstance(info.ins, Effect.Call):
                 for i, arg in enumerate(info.ins.args):
                     info.ins.args[i] = generalize_arg(arg)
-                new_value.append(info)
+                
             elif isinstance(info.ins, Effect.Condition):
                 # expr의 모든 메모리 주소와 레지스터 오프셋을 T로 바꿈
-                pass
-            else:
-                new_value.append(info)
+                info.ins.expr = generalize_arg(info.ins.expr)
+
+            new_value.append(info)
         new_myself[key] = new_value
 
 

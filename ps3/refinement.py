@@ -99,58 +99,42 @@ def refine_one(myself: list[InspectInfo], other: list[InspectInfo]) -> list[Insp
 
     return myself 
 
-def generalize_arg(arg):
+def generalize_node(node: Node) -> Node:
+    # SR 노드이며 자식이 int면 T로 대체
+    if node.label == "SR" and node.children and node.children[0].label.startswith("int: "):
+        return Node("SR", [Node("Const: T", level=node.level+1)], level=node.level)
+    # Mem 노드이며 자식이 int면 T로 대체
+    if node.label == "Mem" and node.children and node.children[0].label.startswith("int: "):
+        return Node("Const: T", [Node("Const: T", level=node.level+1)], level=node.level)
+    # int값이 1000000000000000000보다 크면 T로 대체
+    if node.label.startswith("int: "):
+        try:
+            val = int(node.label[len("int: "):])
+            if val >= 1000000000000000000:
+                return Node("Const: T", level=node.level)
+        except Exception:
+            pass
+    # 자식 노드들 재귀적으로 처리
+    new_children = [generalize_node(child) for child in node.children]
+    return Node(node.label, new_children, level=node.level)
+
+def single_refine_one(info: InspectInfo) -> InspectInfo:
     """
-    인자로 들어온 expr(Effect의 인자 등)을 재귀적으로 AnySymbol로 일반화한다.
-    Binop/Unop 등은 내부 값도 재귀적으로 처리한다.
+    InspectInfo의 ins가 Call 또는 Condition인 경우, 그 안의 expr를 T로 바꾼다.
     """
-    if isinstance(arg, Binop):
-        left = generalize_arg(arg.args[0])
-        right = generalize_arg(arg.args[1])
-        return Binop(arg.op, [left, right])
-    elif isinstance(arg, Unop):
-        inner = generalize_arg(arg.arg if hasattr(arg, 'arg') else arg.args[0])
-        return Unop(arg.op, [inner])
-    elif isinstance(arg, Const):
-        con_val = arg.con
-        if hasattr(con_val, "value"):
-            con_val = con_val.value
-        if isinstance(con_val, str):
-            # 문자열이면 비교하지 않음
-            return arg
-        if con_val >= 1000000000000000000: # 보통 전역 변수 주소
-            return AnySymbol()
-        return arg
-    elif isinstance(arg, RegSymbol):
-        return RegSymbol(AnySymbol())
-    elif isinstance(arg, MemSymbol):
-        inner = generalize_arg(arg.address)
-        return MemSymbol(inner)
-    elif isinstance(arg, ReturnSymbol):
-        inner = generalize_arg(arg.name)
-        return ReturnSymbol(inner)
-    elif isinstance(arg, WildCardSymbol):
-        return WildCardSymbol()
-    elif isinstance(arg, AnySymbol):
-        return AnySymbol()
-    elif isinstance(arg, ITE):
-        cond = generalize_arg(arg.cond)
-        iftrue = generalize_arg(arg.iftrue)
-        iffalse = generalize_arg(arg.iffalse)
-        return ITE(cond, iftrue, iffalse)
+    effect = deepcopy(info.ins)
+    root = effect_to_node(info.ins)
+    new_tree = generalize_node(root)
+    new_tree.print()
+    new_effect = node_to_effect(new_tree, fallback_effect=effect)
     
-    else:
-        return arg
+    return InspectInfo(new_effect)
 
 def single_refine(myself: dict[(InspectInfo, bool):list[InspectInfo]]) -> dict[(InspectInfo, bool):list[InspectInfo]]:
     """
     한 쪽이 비어 있다면, 자기의 시그니처 중에 call과 condition의 내부 표현 중 메모리 주소나 Register의 offset을 모두 T로 바꿈
     예) Call: uninit_options(18446744073709550680 + SR(48)) -> Call: uninit_options(T + SR(T))
     """
-    # old_vuln_effect = deepcopy(vuln_effect)
-    # old_patch_effect = deepcopy(patch_effect)
-    # vuln_effect = [rebuild_effects(effect) for effect in vuln_effect]
-    # patch_effect = [rebuild_effects(effect) for effect in patch_effect]
     old_myself = deepcopy(myself)
     my_effects = {}
     for key, value in myself.items():
@@ -158,38 +142,18 @@ def single_refine(myself: dict[(InspectInfo, bool):list[InspectInfo]]) -> dict[(
         old_key = deepcopy(key_info)
         new_key_info = rebuild_effects(key_info)
         assert new_key_info == old_key, f"Rebuild failed for key {new_key_info}\n!=\n {old_key}"
-        key = (new_key_info, key[1])  # key는 (InspectInfo, bool) 형태
+        rebuild_new_key = single_refine_one(new_key_info)
+      
+        key = (rebuild_new_key, key[1])  # key는 (InspectInfo, bool) 형태
         my_effects[key] = []
         for info in value:
             new_info = rebuild_effects(info)
             assert new_info == info, f"Rebuild failed for info {new_info}\n!=\n {info}"
+            if isinstance(new_info.ins, (Effect.Call, Effect.Condition)):
+                # Call 또는 Condition인 경우, 그 안의 expr를 T로 바꿈
+                new_info = single_refine_one(new_info)
             my_effects[key].append(new_info)
-    # assert my_effects == old_myself, f"Rebuild failed for myself {my_effects}\n!=\n {old_myself}"
-
-    new_myself = {}
-    for key, value in my_effects.items():
-        new_value = []
-        key_info = key[0]
-        # key_info.ins는 언제나 Condition 또는 Call이므로, 그 안의 expr를 T로 바꿔야 함
-        if isinstance(key_info.ins, Effect.Condition):
-            key_info.ins.expr = generalize_arg(key_info.ins.expr)
-        key = (key_info, key[1])  # key는 (InspectInfo, bool) 형태
-
-        for info in value:
-            # info.ins가 Call 또는 Condition인 경우
-            if isinstance(info.ins, Effect.Call):
-                for i, arg in enumerate(info.ins.args):
-                    info.ins.args[i] = generalize_arg(arg)
-                
-            elif isinstance(info.ins, Effect.Condition):
-                # expr의 모든 메모리 주소와 레지스터 오프셋을 T로 바꿈
-                info.ins.expr = generalize_arg(info.ins.expr)
-
-            new_value.append(info)
-        new_myself[key] = new_value
-
-
-    return new_myself
+    return my_effects
 
 
 def refine_sig(vuln_effect: list[InspectInfo], patch_effect: list[InspectInfo]) -> tuple[list[InspectInfo], list[InspectInfo]]:    
@@ -467,8 +431,16 @@ def rebuild_effects(effect: InspectInfo) -> InspectInfo:
             return ret
         elif "Condition: " in original_str:
             expr_part = original_str.replace("Condition: ", "").strip()
+            
+            
             expr = parse_expr(normalize_str(expr_part))
             ret = InspectInfo(Effect.Condition(expr))
+            if original_str == "Condition: If(Mem(404 + SR(T)) <= 2, 1, 0)":
+                print(f"rebuild_effects: effect.ins.expr: {effect.ins.expr}")
+                print(f"and ret: {ret}")
+            if original_str == "Condition: If(Mem(404 + SR(64)) <= 2, 0, 1)":
+                print(f"rebuild_effects {original_str}: effect.ins.expr: {effect.ins.expr}")
+                print(f"and ret: {ret}, ret.ins.expr: {ret.ins.expr}")
             if normalize_str(original_str) != normalize_str(str(ret)):
                 print(f"Rebuild failed for Condition: {original_str} != {str(ret)}")
                 exit(1)
@@ -627,10 +599,17 @@ def expr_to_node(expr, level=0) -> Node:
         return Node(f"ReturnSymbol", [expr_to_node(expr.name, level + 1)], level=level)
     elif isinstance(expr, (pc.F32, pc.F64, pc.U1, pc.U8, pc.U16, pc.U32, pc.U64)):
         return Node(f"IRConst: {expr.value}", level=level)
-       
+
     elif isinstance(expr, CCall):
         # 함수명과 타입을 노드에 기록, 인자들은 자식 노드로
         return Node(f"CCall({expr.cee}:{expr.retty})", [expr_to_node(arg, level + 1) for arg in expr.args], level)
+    
+    elif isinstance(expr, MemSymbol):
+        # MemSymbol은 주소를 표현하는 노드로 변환
+        return Node("Mem", [expr_to_node(expr.address, level + 1)], level=level)
+    elif isinstance(expr, RegSymbol):
+        # RegSymbol은 레지스터를 표현하는 노드로 변환
+        return Node("SR", [expr_to_node(expr.offset, level + 1)], level=level)
         
     else:
         return Node(f"[UNKNOWN expr] {expr} ({type(expr).__name__})", level=level)
@@ -722,6 +701,18 @@ def node_to_expr(node: Node):
         cee, retty = label.split(":")
         args = [node_to_expr(child) for child in node.children]
         return CCall(retty, cee, args)
+    elif node.label == "Mem":
+        # MemSymbol 노드 처리
+        if not node.children or len(node.children) != 1:
+            raise ValueError("Malformed Mem node")
+        addr = node_to_expr(node.children[0])
+        return MemSymbol(addr)
+    elif node.label == "SR":
+        # RegSymbol 노드 처리
+        if not node.children or len(node.children) != 1:
+            raise ValueError("Malformed SR node")
+        offset = node_to_expr(node.children[0])
+        return RegSymbol(offset)
 
     else:
         raise ValueError(f"Unknown node label: {node.label}")
@@ -729,7 +720,7 @@ def node_to_expr(node: Node):
 
 def node_to_effect(node: Node, fallback_effect: Effect = None) -> Effect:
     label = node.label
-
+    print(f"node: {node}, label: {label}")
     if label.startswith("Call("):
         name = label[len("Call("):-1]
 

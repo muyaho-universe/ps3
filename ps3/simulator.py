@@ -1234,17 +1234,19 @@ class Test:
                 patch_effect = {}
                 vuln_effect = single_refine(vuln_effect)
                 # assert vuln_effect == sig.collect, f"vuln_effect {vuln_effect} != sig.collect {sig.collect}"
-                print(f"refined vuln_effect: {vuln_effect}")
+                # print(f"refined vuln_effect: {vuln_effect}")
                 vuln_pattern, patch_pattern = sig.patterns, Patterns([])
             elif sig.state == "patch":
                 vuln_effect = {}
                 # patch_effect, _ = sig.serial()
                 patch_effect = sig.collect
+                # print(f"patch_effect: {patch_effect}")
                 patch_effect = single_refine(patch_effect)
                 # assert patch_effect == sig.collect, f"patch_effect {patch_effect} != sig.collect {sig.collect}"
                 print(f"refined patch_effect: {patch_effect}")
                 vuln_pattern, patch_pattern = Patterns([]), sig.patterns
-
+                # exit(0)
+            
             elif sig.state == "modify":
                 if sig.sig_dict["add"] == [] and sig.sig_dict["remove"] == []:
                     # vuln_info, patch_info = sig.serial()
@@ -1292,36 +1294,36 @@ class Test:
             vuln_match, patch_match = [], []
             # all_effects = extrace_effect(traces)
             all_effects = traces
-            # NOTE: no rebuild 
-            # old_effects = deepcopy(all_effects)
-            # # all_effects = list(set(all_effects))
-            # # print(f"before rebuild all_effects: {all_effects}")
-            # for k, v in list(all_effects.items()):
-            #     new_key = rebuild_effects(k[0])
-            #     try:
-            #         assert new_key == k[0], f"new_key {new_key} != old_key {k[0]}"
-            #     except AssertionError:
-            #         print(f"new_key {new_key.ins.expr}, type: {type(new_key.ins.expr)}")
-            #         print(f"old_key {k[0].ins.expr}, type: {type(k[0].ins.expr)}")
-            #         exit(0)
-            #     k = (new_key, k[1])
-
-            #     old_v = deepcopy(v)
-            #     new_v = []
-            #     for effect in v:
-            #         new_v.append(rebuild_effects(effect))
-            #     assert new_v == old_v, f"new_v {new_v} != old_v {old_v}"
-            #     all_effects[k] = new_v
-            #     # temp = []
-            #     # for i in all_effects:
-            #     #     print(f"refined i: {i}")
-            #     #     a = rebuild_effects(i)
-            #     #     print(f"refined a: {a}")
-            #     #     temp.append(a)
-            #     # all_effects = temp
-            #     # all_effects = [rebuild_effects(e) for e in all_effects]
             
-            # assert all_effects == old_effects, f"all_effects {all_effects}, len(all_effects) {len(all_effects)} \n!= \nold_effects {old_effects}, len(old_effects) {len(old_effects)}"
+            old_effects = deepcopy(all_effects)
+            # all_effects = list(set(all_effects))
+            # logger.info(f"before rebuild all_effects: {all_effects}")
+            for k, v in list(all_effects.items()):
+                new_key = rebuild_effects(k[0])
+                try:
+                    assert new_key == k[0], f"new_key {new_key} != old_key {k[0]}"
+                except AssertionError:
+                    print(f"new_key {new_key.ins.expr}, type: {type(new_key.ins.expr)}")
+                    print(f"old_key {k[0].ins.expr}, type: {type(k[0].ins.expr)}")
+                    exit(0)
+                k = (new_key, k[1])
+
+                old_v = deepcopy(v)
+                new_v = []
+                for effect in v:
+                    new_v.append(rebuild_effects(effect))
+                assert new_v == old_v, f"new_v {new_v} != old_v {old_v}"
+                all_effects[k] = new_v
+                # temp = []
+                # for i in all_effects:
+                #     print(f"refined i: {i}")
+                #     a = rebuild_effects(i)
+                #     print(f"refined a: {a}")
+                #     temp.append(a)
+                # all_effects = temp
+                # all_effects = [rebuild_effects(e) for e in all_effects]
+            
+            assert all_effects == old_effects, f"all_effects {all_effects}, len(all_effects) {len(all_effects)} \n!= \nold_effects {old_effects}, len(old_effects) {len(old_effects)}"
             
                 # print(f"refined all_effects: {all_effects}")
             # logger.info(f"all_effects: {all_effects}") 
@@ -1339,12 +1341,18 @@ class Test:
                 # for i in range(temp):
                 #     patch_effect = list(patch_effect)  # 리스트로 변환
                 #     patch = patch_effect[temp-i-1]
-                print(f"patch_effect: {patch_effect}")
+                # print(f"patch_effect: {patch_effect}")
                 for patch_key, patch_value in patch_effect.items():
                     for pv in patch_value:
-                        print(f"patch_value: {pv}, {type(pv.ins)} and patch_key: {patch_key}")
+                        # print(f"patch_value: {pv}, {type(pv.ins)} and patch_key: {patch_key}")
                         if isinstance(pv.ins, (Effect.Condition, Effect.Call)):
                             # same_key = key_checker(patch_key, list(all_effects.keys()))
+                            for i in list(all_effects.keys()):
+                                if str(i) == "(Condition: If(Mem(24 + SR(64)) == 88086, 0, 1), False)":
+                                    print(f"i: {i[0].ins.expr}, type: {type(i[0].ins.expr)}")
+                                    print(f"patch_key: {patch_key[0].ins.expr}, type: {type(patch_key[0].ins.expr)}")
+                                    print(f"patch_key == i: {patch_key == i}")
+                                    exit(0)
                             if patch_key not in all_effects:
                             # if same_key is None:
                                 logger.info(f"KEY MATCHING FALIED: {patch_key} is not in all_effects; {all_effects.keys()}")
@@ -1380,7 +1388,7 @@ class Test:
                                     break
             if test:
                 continue
-
+        
             # TODO: 테스트 할 방법 찾기
             # for vuln in vuln_effect:
             #     if vuln in all_effects:

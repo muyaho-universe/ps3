@@ -16,6 +16,7 @@ from settings import *
 from refinement import refine_sig, rebuild_effects, effect_to_node, single_refine
 from copy import deepcopy
 import dominator_builder
+from key_equal import key_checker
 
 
 class FunctionNotFound(Exception):
@@ -1162,17 +1163,6 @@ class Test:
         results = []
         funcnames = self.sigs.keys()
 
-        # check at least one function is in the binary, else return None
-        # for funcname in funcnames:
-        #     func_addr = self.find_custom_symbol(funcname)
-        #     if func_addr is not None:
-        #         # simulator.symbol = funcname
-
-        #         break
-        # else:
-        #     logger.critical(f"no function {funcnames} in the signature")
-        #     # exit(0)
-        #     assert False
         for funcname in self.sigs.keys():
             sigs = self.sigs[funcname]
             # funcname = "ssl3_get_record"
@@ -1204,19 +1194,6 @@ class Test:
             if pattern.pattern == "Call":
                 return "Call"
         return None
-
-    # def _match2len(self, match: list) -> int:
-    #     l = 0
-    #     for m in match:
-    #         if m.ins[0] == "Put":
-    #             l += 1
-    #         elif m.ins[0] == "Store":
-    #             l += 1.5
-    #         elif m.ins[0] == "Condition" or m.ins[0] == "Call":
-    #             l += 2
-    #         else:
-    #             raise NotImplementedError(f"{m.ins[0]} is not considered.")
-    #     return l
 
     def _match2len(self, match: list[InspectInfo]) -> int:
         l = 0
@@ -1297,17 +1274,7 @@ class Test:
                                     refined_v, refined_p = refine_sig(v, p)
                                     vuln_effect[vuln_key] = refined_v
                                     patch_effect[patch_key] = refined_p
-                    
-                    # vuln_effect = set(vuln_effect)
-                    # patch_effect = set(patch_effect)
-                    
-                    # vuln_effect, patch_effect = vuln_effect-patch_effect, patch_effect-vuln_effect
-                    # vuln_effect = list(vuln_effect)
-                    # patch_effect = list(patch_effect)
-                    
-                    # if vuln_effect != [] and patch_effect != []:    
-                    #     vuln_effect, patch_effect = refine_sig(vuln_effect, patch_effect)
-                    #     refined = True
+
                     sig.sig_dict["add"] = patch_effect
                     sig.sig_dict["remove"] = vuln_effect
                 else:
@@ -1319,47 +1286,42 @@ class Test:
             
             vuln_use_pattern, patch_use_pattern = self.use_pattern(
                 vuln_pattern), self.use_pattern(patch_pattern)
-            # vuln_effect = set(vuln_effect)
-            # patch_effect = set(patch_effect)
-            
-            # vuln_effect, patch_effect = vuln_effect-patch_effect, patch_effect-vuln_effect
             
             if len(vuln_effect) == 0 and len(patch_effect) == 0:
                 continue
-            # logger.info(f"vuln_effect: {vuln_effect}")
-            # logger.info(f"patch_effect: {patch_effect}")
             vuln_match, patch_match = [], []
             # all_effects = extrace_effect(traces)
             all_effects = traces
-            old_effects = deepcopy(all_effects)
-            # all_effects = list(set(all_effects))
-            # print(f"before rebuild all_effects: {all_effects}")
-            for k, v in list(all_effects.items()):
-                new_key = rebuild_effects(k[0])
-                try:
-                    assert new_key == k[0], f"new_key {new_key} != old_key {k[0]}"
-                except AssertionError:
-                    print(f"new_key {new_key.ins.expr}, type: {type(new_key.ins.expr)}")
-                    print(f"old_key {k[0].ins.expr}, type: {type(k[0].ins.expr)}")
-                    exit(0)
-                k = (new_key, k[1])
+            # NOTE: no rebuild 
+            # old_effects = deepcopy(all_effects)
+            # # all_effects = list(set(all_effects))
+            # # print(f"before rebuild all_effects: {all_effects}")
+            # for k, v in list(all_effects.items()):
+            #     new_key = rebuild_effects(k[0])
+            #     try:
+            #         assert new_key == k[0], f"new_key {new_key} != old_key {k[0]}"
+            #     except AssertionError:
+            #         print(f"new_key {new_key.ins.expr}, type: {type(new_key.ins.expr)}")
+            #         print(f"old_key {k[0].ins.expr}, type: {type(k[0].ins.expr)}")
+            #         exit(0)
+            #     k = (new_key, k[1])
 
-                old_v = deepcopy(v)
-                new_v = []
-                for effect in v:
-                    new_v.append(rebuild_effects(effect))
-                assert new_v == old_v, f"new_v {new_v} != old_v {old_v}"
-                all_effects[k] = new_v
-                # temp = []
-                # for i in all_effects:
-                #     print(f"refined i: {i}")
-                #     a = rebuild_effects(i)
-                #     print(f"refined a: {a}")
-                #     temp.append(a)
-                # all_effects = temp
-                # all_effects = [rebuild_effects(e) for e in all_effects]
+            #     old_v = deepcopy(v)
+            #     new_v = []
+            #     for effect in v:
+            #         new_v.append(rebuild_effects(effect))
+            #     assert new_v == old_v, f"new_v {new_v} != old_v {old_v}"
+            #     all_effects[k] = new_v
+            #     # temp = []
+            #     # for i in all_effects:
+            #     #     print(f"refined i: {i}")
+            #     #     a = rebuild_effects(i)
+            #     #     print(f"refined a: {a}")
+            #     #     temp.append(a)
+            #     # all_effects = temp
+            #     # all_effects = [rebuild_effects(e) for e in all_effects]
             
-            assert all_effects == old_effects, f"all_effects {all_effects}, len(all_effects) {len(all_effects)} \n!= \nold_effects {old_effects}, len(old_effects) {len(old_effects)}"
+            # assert all_effects == old_effects, f"all_effects {all_effects}, len(all_effects) {len(all_effects)} \n!= \nold_effects {old_effects}, len(old_effects) {len(old_effects)}"
             
                 # print(f"refined all_effects: {all_effects}")
             # logger.info(f"all_effects: {all_effects}") 
@@ -1377,39 +1339,43 @@ class Test:
                 # for i in range(temp):
                 #     patch_effect = list(patch_effect)  # 리스트로 변환
                 #     patch = patch_effect[temp-i-1]
-                key_len = len(patch_effect)
-                miss_key = 0
+                print(f"patch_effect: {patch_effect}")
                 for patch_key, patch_value in patch_effect.items():
                     for pv in patch_value:
+                        print(f"patch_value: {pv}, {type(pv.ins)} and patch_key: {patch_key}")
                         if isinstance(pv.ins, (Effect.Condition, Effect.Call)):
+                            # same_key = key_checker(patch_key, list(all_effects.keys()))
                             if patch_key not in all_effects:
-                                logger.info(f"patch {patch_key} is not in all_effects; {all_effects.keys()}")
-                                miss_key += 1
+                            # if same_key is None:
+                                logger.info(f"KEY MATCHING FALIED: {patch_key} is not in all_effects; {all_effects.keys()}")
                                 test = True
                                 result.append("vuln")
                                 break
                             else:
+                                # if pv not in all_effects[patch_key]:
                                 if pv not in all_effects[patch_key]:
                                     test = True
-                                    logger.info(f"all_effects[{patch_key}] does not contain {pv}; {all_effects[patch_key]}")
+                                    logger.info(f"VALUE MATCHING FAILED: all_effects[{patch_key}] does not contain {pv}; {all_effects[patch_key]}")
                                     result.append("vuln")
                                     break
-
             # essential a vuln patch
             if len(patch_effect) == 0:
                 
                 for vuln_key, vuln_value in vuln_effect.items():
                     for vv in vuln_value:
                         if isinstance(vv.ins, (Effect.Condition, Effect.Call)):
+                            # same_key = key_checker(vuln_key, list(all_effects.keys()))
+                            # if same_key is None:
                             if vuln_key not in all_effects:
-                                logger.info(f"vuln {vuln_key} is not in all_effects; {all_effects.keys()}")
+                                logger.info(f"KEY MATCHING FALIED: {vuln_key} is not in all_effects; {all_effects.keys()}")
                                 test = True
                                 result.append("patch")
                                 break
                             else:
+                                # if vv not in all_effects[vuln_key]:
                                 if vv not in all_effects[vuln_key]:
                                     test = True
-                                    logger.info(f"all_effects[{vuln_key}] does not contain {vv}; {all_effects[vuln_key]}")
+                                    logger.info(f"VALUE MATCHING FAILED: all_effects[{vuln_key}] does not contain {vv}; {all_effects[vuln_key]}")
                                     result.append("patch")
                                     break
             if test:
@@ -1420,14 +1386,19 @@ class Test:
             #     if vuln in all_effects:
             #         vuln_match.append(vuln)
             for vuln_key, vuln_value in vuln_effect.items():
+                # vuln_same_key = key_checker(vuln_key, list(all_effects.keys()))
+                # if vuln_same_key is not None:
                 if vuln_key in all_effects:
                     for vv in vuln_value:
+                        # if vv in all_effects[vuln_key]:
                         if vv in all_effects[vuln_key]:
                             vuln_match.append(vv)
             # for patch in patch_effect:                
             #     if patch in all_effects:
             #         patch_match.append(patch)
             for patch_key, patch_value in patch_effect.items():
+                # patch_same_key = key_checker(patch_key, list(all_effects.keys()))
+                # if patch_same_key is not None:
                 if patch_key in all_effects:
                     for pv in patch_value:
                         if pv in all_effects[patch_key]:

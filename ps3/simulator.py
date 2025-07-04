@@ -755,6 +755,8 @@ class Signature:
         self.state = state
         self.patterns = patterns
         self.sig_dict = {"add": [], "remove": []}
+        self.refined_patch = None
+        self.refined_vuln = None
 
     @classmethod
     def from_add(cls, collect: dict, funcname: str, state: str, patterns) -> "Signature":
@@ -1229,21 +1231,28 @@ class Test:
         for sig in sigs:
             refined = False
             if sig.state == "vuln":
-                # vuln_effect, _ = sig.serial()
-                vuln_effect = sig.collect
                 patch_effect = {}
-                vuln_effect = single_refine(vuln_effect)
+                # vuln_effect, _ = sig.serial()
+                if sig.refined_vuln is None:
+                    vuln_effect = sig.collect
+                    vuln_effect = single_refine(vuln_effect)
+                    sig.refined_vuln = vuln_effect
+                else:
+                    vuln_effect = sig.refined_vuln
+                
                 # assert vuln_effect == sig.collect, f"vuln_effect {vuln_effect} != sig.collect {sig.collect}"
                 # print(f"refined vuln_effect: {vuln_effect}")
                 vuln_pattern, patch_pattern = sig.patterns, Patterns([])
             elif sig.state == "patch":
                 vuln_effect = {}
                 # patch_effect, _ = sig.serial()
-                patch_effect = sig.collect
-                # print(f"patch_effect: {patch_effect}")
-                patch_effect = single_refine(patch_effect)
-                # assert patch_effect == sig.collect, f"patch_effect {patch_effect} != sig.collect {sig.collect}"
-                print(f"refined patch_effect: {patch_effect}")
+                if sig.refined_patch is None:
+                    patch_effect = sig.collect
+                    patch_effect = single_refine(patch_effect)
+                    sig.refined_patch = patch_effect
+                else:
+                    patch_effect = sig.refined_patch
+                # print(f"refined patch_effect: {patch_effect}")
                 vuln_pattern, patch_pattern = Patterns([]), sig.patterns
                 # exit(0)
             
@@ -1317,36 +1326,15 @@ class Test:
                 new_effects[k] = new_v
 
             all_effects = new_effects
-            # assert all_effects == old_effects, f"all_effects {all_effects}, len(all_effects) {len(all_effects)} \n!= \nold_effects {old_effects}, len(old_effects) {len(old_effects)}"
-            
-                # print(f"refined all_effects: {all_effects}")
-            # logger.info(f"all_effects: {all_effects}") 
-            # logger.info(f"all_effects: {sorted(str(InspectInfo(i)) for i in all_effects)}")
             logger.info(f"after rebuild all_effects: {all_effects}")
-            # for effect in all_effects:
-            #     logger.info(f"effect: {effect}")
             
             
             test = False
             # essential a add patch
             if len(vuln_effect) == 0:
-                # logger.info("pure addition")
-                # temp = len(patch_effect)
-                # for i in range(temp):
-                #     patch_effect = list(patch_effect)  # 리스트로 변환
-                #     patch = patch_effect[temp-i-1]
-                # print(f"patch_effect: {patch_effect}")
                 for patch_key, patch_value in patch_effect.items():
                     for pv in patch_value:
-                        # print(f"patch_value: {pv}, {type(pv.ins)} and patch_key: {patch_key}")
                         if isinstance(pv.ins, (Effect.Condition, Effect.Call)):
-                            # same_key = key_checker(patch_key, list(all_effects.keys()))
-                            # for all_key in all_effects.keys():
-                            #     if str(all_key) == "(Condition: If(Mem(24 + SR(64)) == 88086, 0, 1), False)":
-                            #         print(f"patch_key: {patch_key}, {patch_key[0].ins.expr}, type: {type(patch_key[0].ins.expr)}")
-                            #         print(f"all_key[0]: {all_key[0]}, {all_key[0].ins.expr}, type: {type(all_key[0].ins.expr)}")
-                            #         print(f"patch_key == all_key: {patch_key == all_key}, patch_key[0] == all_key[0]: {patch_key[0] == all_key[0]}")
-                            #         exit(0)
                             if patch_key not in all_effects:
                             # if same_key is None:
                                 logger.info(f"KEY MATCHING FALIED: {patch_key} is not in all_effects; {all_effects.keys()}")

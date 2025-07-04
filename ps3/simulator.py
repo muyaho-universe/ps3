@@ -380,10 +380,14 @@ class Simulator:
                                 if key not in list(new_collect.keys()):
                                     new_collect[key] = []
                                 for _, item in collect[k].items():
-                                    if key not in list(new_collect.keys()):
+                                    if key not in new_collect:
                                         new_collect[key] = []
-                                    
-                                    new_collect[key].extend(item)
+                                    # item이 리스트가 아닐 수도 있으니 리스트로 변환
+                                    if isinstance(item, list):
+                                        new_collect[key].extend(item)
+                                    else:
+                                        new_collect[key].append(item)
+                                # print(f"new_collect: {new_collect}"
                                     
                                 # i = clean(new_collect[key])
                                 # i = new_collect[key]
@@ -1246,18 +1250,33 @@ class Test:
                             if vuln_key == patch_key:
                                 # print(f"vuln_value: {vuln_value}, patch_value: {patch_value}")
                                 v, p = list(set(vuln_value) - set(patch_value)), list(set(patch_value) - set(vuln_value))
-                                if not v and not p:
-                                    # 두 리스트가 모두 비어 있으면 key 삭제
+                                # refinement
+                                if v and p:
+                                    # both have values, refine them
+                                        refined_v, refined_p = refine_sig(v, p)
+                                        vuln_effect[vuln_key] = refined_v
+                                        patch_effect[patch_key] = refined_p
+                                elif v:
+                                    # only vuln has values, refine vuln
+                                    refined_v = single_refine(v)
+                                    vuln_effect[vuln_key] = refined_v
+                                    if patch_key in patch_effect:
+                                        del patch_effect[patch_key]
+                                    
+                                elif p:
+                                    # only patch has values, refine patch
+                                    refined_p = single_refine(p)
+                                    patch_effect[patch_key] = refined_p
+                                    if vuln_key in vuln_effect:
+                                        del vuln_effect[vuln_key]
+                                else:
                                     del vuln_effect[vuln_key]
                                     del patch_effect[patch_key]
-                                else:
-                                    # refinement
-                                    refined_v, refined_p = refine_sig(v, p)
-                                    vuln_effect[vuln_key] = refined_v
-                                    patch_effect[patch_key] = refined_p
 
                     sig.sig_dict["add"] = patch_effect
                     sig.sig_dict["remove"] = vuln_effect
+                    sig.refined_patch = patch_effect
+                    sig.refined_vuln = vuln_effect
                 else:
                     vuln_effect, patch_effect = sig.sig_dict["remove"], sig.sig_dict["add"]
 
@@ -1320,17 +1339,35 @@ class Test:
                                     break
                         if isinstance(pv.ins, Effect.Condition):
                             if patch_key not in all_effects: # patch_key is a Condition, so we check if it is in all_effects
-                                if pv not in all_effects:
+                                in_true_branch = True
+                                in_false_branch = True
+                                if (pv, True) not in all_effects :
+                                    # test = True
+                                    # result.append("vuln")
+                                    # logger.info(f"KEY MATCHING FALIED: {patch_key} and {pv} is not in all_effects; {all_effects.keys()}")
+                                    # break
+                                    # key 없음
+                                    in_true_branch = False
+                                else:
+                                    if patch_effect[(pv, True)] != all_effects[(pv, True)]:
+                                        # test = True
+                                        # result.append("vuln")
+                                        # logger.info(f"VALUE MATCHING FAILED: all_effects[{pv}] are different from {patch_effect[pv]}; {all_effects[pv]}")
+                                        # break
+                                        # value 다름
+                                        in_true_branch = False
+                                
+                                if not in_true_branch: # True branch에 없으면 False branch에 있는지 확인
+                                    if (pv, False) not in all_effects:
+                                        in_false_branch = False
+                                    else:
+                                        if patch_effect[(pv, False)] != all_effects[(pv, False)]:
+                                            in_false_branch = False
+                                if not in_true_branch and not in_false_branch:
+                                    logger.info(f"KEY MATCHING FALIED: {patch_key} and {pv}'s True and False are not in all_effects; {all_effects.keys()}")
                                     test = True
                                     result.append("vuln")
-                                    logger.info(f"KEY MATCHING FALIED: {patch_key} and {pv} is not in all_effects; {all_effects.keys()}")
                                     break
-                                else:
-                                    if patch_effect[pv] != all_effects[pv]:
-                                        test = True
-                                        result.append("vuln")
-                                        logger.info(f"VALUE MATCHING FAILED: all_effects[{pv}] are different from {patch_effect[pv]}; {all_effects[pv]}")
-                                        break
                             else:
                                 if pv not in all_effects[patch_key]:
                                     logger.info(f"VALUE MATCHING FAILED: all_effects[{patch_key}] does not contain {pv}; {all_effects[patch_key]}")
@@ -1363,11 +1400,47 @@ class Test:
                                     result.append("patch")
                                     break
                         if isinstance(vv.ins, Effect.Condition):
-                            if vv not in all_effects: # vv is a Condition, so we check if it is in all_effects
-                                logger.info(f"KEY MATCHING FALIED: {vuln_key} is not in all_effects; {all_effects.keys()}")
-                                test = True
-                                result.append("patch")
-                                break
+                            if vuln_key not in all_effects: # vuln_key is a Condition, so we check if it is in all_effects
+                                in_true_branch = True
+                                in_false_branch = True
+                                if (vv, True) not in all_effects:
+                                    # test = True
+                                    # result.append("patch")
+                                    # logger.info(f"KEY MATCHING FALIED: {vuln_key} and {vv} is not in all_effects; {all_effects.keys()}")
+                                    # break
+                                    # key 없음
+                                    in_true_branch = False
+                                else:
+                                    if vuln_effect[(vv, True)] != all_effects[(vv, True)]:
+                                        # test = True
+                                        # result.append("patch")
+                                        # logger.info(f"VALUE MATCHING FAILED: all_effects[{vv}] are different from {vuln_effect[vv]}; {all_effects[vv]}")
+                                        # break
+                                        # value 다름
+                                        in_true_branch = False
+
+                                if not in_true_branch: # True branch에 없으면 False branch에 있는지 확인
+                                    if (vv, False) not in all_effects:
+                                        in_false_branch = False
+                                    else:
+                                        if vuln_effect[(vv, False)] != all_effects[(vv, False)]:
+                                            in_false_branch = False
+                                if not in_true_branch and not in_false_branch:
+                                    logger.info(f"KEY MATCHING FALIED: {vuln_key} and {vv}'s True and False are not in all_effects; {all_effects.keys()}")
+                                    test = True
+                                    result.append("patch")
+                                    break
+                            else:
+                                if vv not in all_effects[vuln_key]:
+                                    logger.info(f"VALUE MATCHING FAILED: all_effects[{vuln_key}] does not contain {vv}; {all_effects[vuln_key]}")
+                                    test = True
+                                    result.append("patch")
+                                    break
+                            # if vv not in all_effects: # vv is a Condition, so we check if it is in all_effects
+                            #     logger.info(f"KEY MATCHING FALIED: {vuln_key} is not in all_effects; {all_effects.keys()}")
+                            #     test = True
+                            #     result.append("patch")
+                            #     break
             if test:
                 continue
         
@@ -1394,7 +1467,6 @@ class Test:
                         if pv in all_effects[patch_key]:
                             patch_match.append(pv)
             logger.info(f"vuln match {vuln_match}, patch match {patch_match}")
-            exit(0)
             # If the pattern is If, then we should check there at least one condition in matched effect
             if patch_use_pattern == "If":
                 # patch_match = [

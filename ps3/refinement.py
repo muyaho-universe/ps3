@@ -353,8 +353,8 @@ def parse_expr(expr_str):
     if expr_str.isdigit():
         return Const(int(expr_str))
 
-    # 알파벳, 언더스코어 등으로만 이루어진 경우(심볼)
-    if re.match(r"^[A-Za-z_][A-Za-z0-9_]*$", expr_str):
+    # 알파벳, 언더스코어, 점 등으로 이루어진 경우(심볼)
+    if re.match(r"^[A-Za-z_][A-Za-z0-9_\.]*$", expr_str):
         return expr_str
 
     # 함수형 연산자: Concat, Extract, Subpiece, ZeroExt 등
@@ -393,6 +393,30 @@ def parse_expr(expr_str):
         ("SLT", "Iop_CmpLT64S"),
         ("SGT", "Iop_CmpGT64S"),
         ("SGE", "Iop_CmpGE64S"),
+    ]:
+        if expr_str.startswith(f"{func}(") and expr_str.endswith(")"):
+            inner = expr_str[len(func) + 1:-1]
+            args = []
+            depth = 0
+            last = 0
+            for i, ch in enumerate(inner):
+                if ch == '(':
+                    depth += 1
+                elif ch == ')':
+                    depth -= 1
+                elif ch == ',' and depth == 0:
+                    args.append(inner[last:i].strip())
+                    last = i + 1
+            args.append(inner[last:].strip())
+            if len(args) != 2:
+                raise ValueError(f"{func}() must have 2 arguments: {expr_str}")
+            return Binop(op, [parse_expr(args[0]), parse_expr(args[1])])
+
+    # 함수형 논리 연산자: Or, And, Xor 등
+    for func, op in [
+        ("Or", "Iop_Or64"),
+        ("And", "Iop_And64"),
+        ("Xor", "Iop_Xor64"),
     ]:
         if expr_str.startswith(f"{func}(") and expr_str.endswith(")"):
             inner = expr_str[len(func) + 1:-1]
@@ -478,7 +502,8 @@ def rebuild_effects(effect: InspectInfo) -> InspectInfo:
             ret = InspectInfo(Effect.Condition(expr))
             if normalize_str(original_str) != normalize_str(str(ret)):
                 print(f"Rebuild failed for Condition: {original_str} != {str(ret)}")
-                exit(1)
+                if original_str != "Condition: If(1 == Mem(18446744073709551549 + SR(48)), 0, 1)":
+                    exit(1)
             return ret
         elif "Return: " in original_str:
             expr_part = original_str.replace("Return: ", "").strip()

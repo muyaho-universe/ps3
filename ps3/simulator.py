@@ -1237,6 +1237,7 @@ class Test:
                     vuln_effect = sig.collect
                     vuln_effect = single_refine(vuln_effect)
                     sig.refined_vuln = vuln_effect
+                    logger.info(f"refined vuln_effect: {vuln_effect}")
                 else:
                     vuln_effect = sig.refined_vuln
                 
@@ -1250,6 +1251,7 @@ class Test:
                     patch_effect = sig.collect
                     patch_effect = single_refine(patch_effect)
                     sig.refined_patch = patch_effect
+                    logger.info(f"refined patch_effect: {patch_effect}")
                 else:
                     patch_effect = sig.refined_patch
                 # print(f"refined patch_effect: {patch_effect}")
@@ -1334,7 +1336,7 @@ class Test:
             if len(vuln_effect) == 0:
                 for patch_key, patch_value in patch_effect.items():
                     for pv in patch_value:
-                        if isinstance(pv.ins, (Effect.Condition, Effect.Call)):
+                        if isinstance(pv.ins, Effect.Call):
                             if patch_key not in all_effects:
                             # if same_key is None:
                                 logger.info(f"KEY MATCHING FALIED: {patch_key} is not in all_effects; {all_effects.keys()}")
@@ -1348,12 +1350,19 @@ class Test:
                                     logger.info(f"VALUE MATCHING FAILED: all_effects[{patch_key}] does not contain {pv}; {all_effects[patch_key]}")
                                     result.append("vuln")
                                     break
+                        if isinstance(pv.ins, Effect.Condition):
+                            if pv not in all_effects: # pv is a Condition, so we check if it is in all_effects
+                                logger.info(f"KEY MATCHING FALIED: {patch_key} is not in all_effects; {all_effects.keys()}")
+                                test = True
+                                result.append("vuln")
+                                break
+                            
             # essential a vuln patch
             if len(patch_effect) == 0:
                 
                 for vuln_key, vuln_value in vuln_effect.items():
                     for vv in vuln_value:
-                        if isinstance(vv.ins, (Effect.Condition, Effect.Call)):
+                        if isinstance(vv.ins, Effect.Call):
                             # same_key = key_checker(vuln_key, list(all_effects.keys()))
                             # if same_key is None:
                             if vuln_key not in all_effects:
@@ -1368,6 +1377,12 @@ class Test:
                                     logger.info(f"VALUE MATCHING FAILED: all_effects[{vuln_key}] does not contain {vv}; {all_effects[vuln_key]}")
                                     result.append("patch")
                                     break
+                        if isinstance(vv.ins, Effect.Condition):
+                            if vv not in all_effects: # vv is a Condition, so we check if it is in all_effects
+                                logger.info(f"KEY MATCHING FALIED: {vuln_key} is not in all_effects; {all_effects.keys()}")
+                                test = True
+                                result.append("patch")
+                                break
             if test:
                 continue
         

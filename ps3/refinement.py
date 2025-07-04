@@ -216,6 +216,19 @@ def parse_expr(expr_str):
         ("<<", "Iop_Shl64"),
         (">>", "Iop_Shr64S"),
     ]
+    if expr_str.startswith("(") and expr_str.endswith(")"):
+        # 괄호가 매칭되는지 확인
+        depth = 0
+        for i, ch in enumerate(expr_str):
+            if ch == "(":
+                depth += 1
+            elif ch == ")":
+                depth -= 1
+                if depth == 0 and i != len(expr_str) - 1:
+                    break
+        else:
+            # 괄호가 전체를 감싸는 경우
+            return parse_expr(expr_str[1:-1].strip())
     if expr_str == "True":
         # 1 == 1을 CmpEQ64로 표현 (항상 True)
         return Binop("Iop_CmpEQ64", [Const(1), Const(1)])

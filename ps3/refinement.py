@@ -101,11 +101,11 @@ def refine_one(myself: list[InspectInfo], other: list[InspectInfo]) -> list[Insp
 
 def generalize_node(node: Node) -> Node:
     # SR 노드이며 자식이 int면 T로 대체
-    if node.label == "SR" and node.children and node.children[0].label.startswith("int: "):
-        return Node("SR", [Node("Const: T", level=node.level+1)], level=node.level)
-    # Mem 노드이며 자식이 int면 T로 대체
-    if node.label == "Mem" and node.children and node.children[0].label.startswith("int: "):
-        return Node("Const: T", [Node("Const: T", level=node.level+1)], level=node.level)
+    # if node.label == "SR" and node.children and node.children[0].label.startswith("int: "):
+    #     return Node("SR", [Node("Const: T", level=node.level+1)], level=node.level)
+    # # Mem 노드이며 자식이 int면 T로 대체
+    # if node.label == "Mem" and node.children and node.children[0].label.startswith("int: "):
+    #     return Node("Const: T", [Node("Const: T", level=node.level+1)], level=node.level)
     # int값이 1000000000000000000보다 크면 T로 대체
     if node.label.startswith("int: "):
         try:
@@ -125,7 +125,6 @@ def single_refine_one(info: InspectInfo) -> InspectInfo:
     effect = deepcopy(info.ins)
     root = effect_to_node(info.ins)
     new_tree = generalize_node(root)
-    new_tree.print()
     new_effect = node_to_effect(new_tree, fallback_effect=effect)
     
     return InspectInfo(new_effect)
@@ -142,8 +141,8 @@ def single_refine(myself: dict[(InspectInfo, bool):list[InspectInfo]]) -> dict[(
         old_key = deepcopy(key_info)
         new_key_info = rebuild_effects(key_info)
         assert new_key_info == old_key, f"Rebuild failed for key {new_key_info}\n!=\n {old_key}"
+        
         rebuild_new_key = single_refine_one(new_key_info)
-      
         key = (rebuild_new_key, key[1])  # key는 (InspectInfo, bool) 형태
         my_effects[key] = []
         for info in value:
@@ -435,12 +434,6 @@ def rebuild_effects(effect: InspectInfo) -> InspectInfo:
             
             expr = parse_expr(normalize_str(expr_part))
             ret = InspectInfo(Effect.Condition(expr))
-            if original_str == "Condition: If(Mem(404 + SR(T)) <= 2, 1, 0)":
-                print(f"rebuild_effects: effect.ins.expr: {effect.ins.expr}")
-                print(f"and ret: {ret}")
-            if original_str == "Condition: If(Mem(404 + SR(64)) <= 2, 0, 1)":
-                print(f"rebuild_effects {original_str}: effect.ins.expr: {effect.ins.expr}")
-                print(f"and ret: {ret}, ret.ins.expr: {ret.ins.expr}")
             if normalize_str(original_str) != normalize_str(str(ret)):
                 print(f"Rebuild failed for Condition: {original_str} != {str(ret)}")
                 exit(1)
@@ -720,7 +713,6 @@ def node_to_expr(node: Node):
 
 def node_to_effect(node: Node, fallback_effect: Effect = None) -> Effect:
     label = node.label
-    print(f"node: {node}, label: {label}")
     if label.startswith("Call("):
         name = label[len("Call("):-1]
 

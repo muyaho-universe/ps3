@@ -1298,7 +1298,8 @@ class Test:
             old_effects = deepcopy(all_effects)
             # all_effects = list(set(all_effects))
             # logger.info(f"before rebuild all_effects: {all_effects}")
-            for k, v in list(all_effects.items()):
+            new_effects = {}
+            for k, v in all_effects.items():
                 new_key = rebuild_effects(k[0])
                 try:
                     assert new_key == k[0], f"new_key {new_key} != old_key {k[0]}"
@@ -1313,17 +1314,10 @@ class Test:
                 for effect in v:
                     new_v.append(rebuild_effects(effect))
                 assert new_v == old_v, f"new_v {new_v} != old_v {old_v}"
-                all_effects[k] = new_v
-                # temp = []
-                # for i in all_effects:
-                #     print(f"refined i: {i}")
-                #     a = rebuild_effects(i)
-                #     print(f"refined a: {a}")
-                #     temp.append(a)
-                # all_effects = temp
-                # all_effects = [rebuild_effects(e) for e in all_effects]
-            
-            assert all_effects == old_effects, f"all_effects {all_effects}, len(all_effects) {len(all_effects)} \n!= \nold_effects {old_effects}, len(old_effects) {len(old_effects)}"
+                new_effects[k] = new_v
+
+            all_effects = new_effects
+            # assert all_effects == old_effects, f"all_effects {all_effects}, len(all_effects) {len(all_effects)} \n!= \nold_effects {old_effects}, len(old_effects) {len(old_effects)}"
             
                 # print(f"refined all_effects: {all_effects}")
             # logger.info(f"all_effects: {all_effects}") 
@@ -1347,12 +1341,12 @@ class Test:
                         # print(f"patch_value: {pv}, {type(pv.ins)} and patch_key: {patch_key}")
                         if isinstance(pv.ins, (Effect.Condition, Effect.Call)):
                             # same_key = key_checker(patch_key, list(all_effects.keys()))
-                            for i in list(all_effects.keys()):
-                                if str(i) == "(Condition: If(Mem(24 + SR(64)) == 88086, 0, 1), False)":
-                                    print(f"i: {i[0].ins.expr}, type: {type(i[0].ins.expr)}")
-                                    print(f"patch_key: {patch_key[0].ins.expr}, type: {type(patch_key[0].ins.expr)}")
-                                    print(f"patch_key == i: {patch_key == i}")
-                                    exit(0)
+                            # for all_key in all_effects.keys():
+                            #     if str(all_key) == "(Condition: If(Mem(24 + SR(64)) == 88086, 0, 1), False)":
+                            #         print(f"patch_key: {patch_key}, {patch_key[0].ins.expr}, type: {type(patch_key[0].ins.expr)}")
+                            #         print(f"all_key[0]: {all_key[0]}, {all_key[0].ins.expr}, type: {type(all_key[0].ins.expr)}")
+                            #         print(f"patch_key == all_key: {patch_key == all_key}, patch_key[0] == all_key[0]: {patch_key[0] == all_key[0]}")
+                            #         exit(0)
                             if patch_key not in all_effects:
                             # if same_key is None:
                                 logger.info(f"KEY MATCHING FALIED: {patch_key} is not in all_effects; {all_effects.keys()}")

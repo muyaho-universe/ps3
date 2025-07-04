@@ -931,60 +931,6 @@ class Generator:
         assert proj1.loader.main_object.min_addr == proj2.loader.main_object.min_addr
         return Generator(proj1, proj2)
 
-    # def generate(self, funcname: str, addresses: dict, state: str, patterns: Patterns) -> dict:
-    #     patterns_ = handle_pattern(patterns)
-    #     new_addresses = {}
-    #     try:
-    #         if state == "vuln":
-    #             base_addr = self.vuln_proj.proj.loader.main_object.min_addr
-                
-    #         elif state == "patch":
-    #             base_addr = self.patch_proj.proj.loader.main_object.min_addr
-    #         else:
-    #             raise NotImplementedError(f"{state} is not considered.")
-            
-            
-    #         for key in addresses.keys():
-    #             if key != "None":
-    #                 temp = addresses[key]
-    #                 temp = [addr + base_addr for addr in temp]
-    #                 new_key = tuple(x + base_addr for x in key)
-    #                 new_addresses[new_key] = temp
-    #             else:
-    #                 temp = addresses[key]
-    #                 temp = [addr + base_addr for addr in temp]
-    #                 new_addresses[key] = temp
-
-                    
-    #         # if isinstance(addresses[0], tuple):
-    #         #     addresses = [(parent + base_addr, binary + base_addr) for parent, binary in addresses]
-    #         # else:
-    #         #     addresses = [
-    #         #             addr + base_addr for addr in addresses]
-    #         if state == "vuln":
-    #             collect, info = self.vuln_proj.generate(
-    #                 funcname, new_addresses, patterns_)
-    #         elif state == "patch":
-    #             collect, info = self.patch_proj.generate(
-    #                 funcname, new_addresses, patterns_)
-    #         else:
-    #             raise NotImplementedError(f"{state} is not considered.")
-    #         # collect = self.vuln_proj.generate_parent_child(
-    #         #     funcname, new_addresses, patterns_)
-    #     except FunctionNotFound:
-    #         return None
-    #     print(f"new_addresses: {new_addresses}")
-    #     print(f"collect: {collect}")
-    #     print(f"info: {info}")
-    #     new_collect = extract_collect(new_addresses, collect, info)
-    #     print(f"new_collect: {new_collect}")
-    #     for bb in new_collect.keys():
-            # clean_collect = clean(new_collect[bb])
-    #         new_collect[bb] = clean_collect
-        
-    #     print(f"signature: {new_collect}")
-    #     return collect
-
     def generate(self, funcname: str, addresses: list[int], state: str, patterns: Patterns) -> dict:
         # print("in Generator generate")
         patterns_ = handle_pattern(patterns)

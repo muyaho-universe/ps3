@@ -545,9 +545,10 @@ class Simulator:
             parent_addr = self.supernode_parent_map[addr]
             if parent_addr not in init_state.inspect:
                 init_state.inspect[parent_addr] = {}
-            for parent_addr in self.address_parent[addr]:
-                    if parent_addr not in self.inspect_addrs:
-                        self.inspect_addrs.append(parent_addr)
+            if self.address_parent[addr] is not None:
+                for parent_addr in self.address_parent[addr]:
+                        if parent_addr not in self.inspect_addrs:
+                            self.inspect_addrs.append(parent_addr)
                 
         queue = [init_state]
         visit = set()
@@ -579,12 +580,33 @@ class Simulator:
             # print(f"from_to: {self.from_to}")
             is_true_branch = (parent, child) in self.from_to
             self.dom_tree[parent][child]['true_branch'] = is_true_branch
+            # print(f"0x{parent:x} -> 0x{child:x}, true_branch: {is_true_branch}")
 
         for parent, child in self.dom_tree.edges():
             is_true_branch = self.dom_tree[parent][child].get('true_branch', False)
             # print(f"0x{parent:x} -> 0x{child:x}, true_branch: {is_true_branch}")
         new_trace = {}
+        # print(f"self.supernode_parent_map: {self.supernode_parent_map}")
+        # print("self.supernode_map: ")
+        # for k, v in self.supernode_map.items():
+        #     print(f"0x{k:x} -> 0x{v:x}")
+        # print("self.supernode_parent_map: ")
+        # for k, v in self.supernode_parent_map.items():
+        #     if v is None:
+        #         print(f"0x{k:x} -> None")
+        #     else:
+        #         print(f"0x{k:x} -> 0x{v:x}")
+        # for key in trace.keys():
+        #     print(f"key: {hex(key)}, in self.supernode_parent_map: {key in self.supernode_parent_map}")
+
+        # for k, v in trace.items():
+        #     print(f"key: {hex(k)}, value: {v}")
+        #     if isinstance(v, dict):
+        #         for k2, v2 in v.items():
+        #             print(f"  key2: {hex(k2)}, value2: {v2}")
+
         for k in trace.keys():
+            # print(f"key: {k}, in self.supernode_parent_map: {k in self.supernode_parent_map}")
             if k in self.supernode_parent_map:
                 parent = self.supernode_parent_map[k]
                 k_top = self.supernode_map[k]
@@ -1297,12 +1319,29 @@ class Test:
                                     result.append("vuln")
                                     break
                         if isinstance(pv.ins, Effect.Condition):
-                            if pv not in all_effects: # pv is a Condition, so we check if it is in all_effects
-                                logger.info(f"KEY MATCHING FALIED: {patch_key} is not in all_effects; {all_effects.keys()}")
-                                test = True
-                                result.append("vuln")
-                                break
-                            
+                            if patch_key not in all_effects: # patch_key is a Condition, so we check if it is in all_effects
+                                if pv not in all_effects:
+                                    test = True
+                                    result.append("vuln")
+                                    logger.info(f"KEY MATCHING FALIED: {patch_key} and {pv} is not in all_effects; {all_effects.keys()}")
+                                    break
+                                else:
+                                    if patch_effect[pv] != all_effects[pv]:
+                                        test = True
+                                        result.append("vuln")
+                                        logger.info(f"VALUE MATCHING FAILED: all_effects[{pv}] are different from {patch_effect[pv]}; {all_effects[pv]}")
+                                        break
+                            else:
+                                if pv not in all_effects[patch_key]:
+                                    logger.info(f"VALUE MATCHING FAILED: all_effects[{patch_key}] does not contain {pv}; {all_effects[patch_key]}")
+                                    test = True
+                                    result.append("vuln")
+                                    break
+                            # if pv not in all_effects: # pv is a Condition, so we check if it is in all_effects
+                            #     
+                            #     test = True
+                            #     result.append("vuln")
+                            #     break
             # essential a vuln patch
             if len(patch_effect) == 0:
                 
@@ -1355,7 +1394,7 @@ class Test:
                         if pv in all_effects[patch_key]:
                             patch_match.append(pv)
             logger.info(f"vuln match {vuln_match}, patch match {patch_match}")
-            # exit(0)
+            exit(0)
             # If the pattern is If, then we should check there at least one condition in matched effect
             if patch_use_pattern == "If":
                 # patch_match = [

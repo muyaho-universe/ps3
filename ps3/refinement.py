@@ -383,6 +383,35 @@ def parse_expr(expr_str):
             elif func == "ZeroExt":
                 return CCall("Ity_I64", "Iop_ZeroExt64", [parse_expr(a) for a in args])
 
+    # 함수형 비교 연산자: ULE, ULT, UGT, UGE 등
+    for func, op in [
+        ("ULE", "Iop_CmpLE64U"),
+        ("ULT", "Iop_CmpLT64U"),
+        ("UGT", "Iop_CmpGT64U"),
+        ("UGE", "Iop_CmpGE64U"),
+        ("SLE", "Iop_CmpLE64S"),
+        ("SLT", "Iop_CmpLT64S"),
+        ("SGT", "Iop_CmpGT64S"),
+        ("SGE", "Iop_CmpGE64S"),
+    ]:
+        if expr_str.startswith(f"{func}(") and expr_str.endswith(")"):
+            inner = expr_str[len(func) + 1:-1]
+            args = []
+            depth = 0
+            last = 0
+            for i, ch in enumerate(inner):
+                if ch == '(':
+                    depth += 1
+                elif ch == ')':
+                    depth -= 1
+                elif ch == ',' and depth == 0:
+                    args.append(inner[last:i].strip())
+                    last = i + 1
+            args.append(inner[last:].strip())
+            if len(args) != 2:
+                raise ValueError(f"{func}() must have 2 arguments: {expr_str}")
+            return Binop(op, [parse_expr(args[0]), parse_expr(args[1])])
+
     raise ValueError(f"parse_expr: 파싱 실패: {expr_str}")
 
 def rebuild_effects(effect: InspectInfo) -> InspectInfo:

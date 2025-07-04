@@ -76,6 +76,8 @@ def run_one(tests: list[TestJson]) -> list[TestResult]:
             elif hunk.type == "modify":
                 collect_patch = signature_generator.generate(
                     funcname, hunk.add, "patch", hunk.add_pattern)
+                # exit(0)
+                # print("=" * 20)
                 collect_vuln = signature_generator.generate(
                     funcname, hunk.remove, "vuln", hunk.remove_pattern)
             
@@ -89,7 +91,7 @@ def run_one(tests: list[TestJson]) -> list[TestResult]:
                 
                 # print(f"after refine collect_patch: {collect_patch}")
                 # print(f"after refine collect_vuln: {collect_vuln}")
-                # exit(0)
+                
                 signature = Signature.from_modify(
                     collect_vuln, collect_patch, funcname, hunk.add_pattern, hunk.remove_pattern)
                 sigs[funcname].append(signature)

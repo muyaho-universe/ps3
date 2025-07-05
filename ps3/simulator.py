@@ -83,7 +83,7 @@ class Simulator:
         self.cfg = cfg
         self.dom_tree, self.super_node = dominator_builder.build_dominator_tree(cfg, funcname)
         # print(f"self.parent_info: {self.parent_info}")
-        dominator_builder.print_dom_tree(self.dom_tree, symbol.rebased_addr, labels=None)
+        # dominator_builder.print_dom_tree(self.dom_tree, symbol.rebased_addr, labels=None)
         self.function = function
         self._init_map()
     # def _init_function(self, funcname: str):
@@ -907,16 +907,19 @@ def valid_sig(sigs: list[Signature]):
             # print(f"i: {i}")
             i += 1
             if sig.state == "modify":
-                add, remove = sig.serial()
-                add = set(add[0])
-                remove = set(remove[0])
-                # breakpoint()
-                # print(f"add: {add}")
-                # print(f"remove: {remove}")
-                if add.issuperset(remove) or remove.issuperset(add):
-                    # print("add.issuperset(remove) or remove.issuperset(add)")
-                    continue
-                new_sigs.append(sig)
+                remove, add = sig.collect[0], sig.collect[1]
+                for _, rv in remove.items():
+                    rv = set(rv)
+                    for _, av in add.items():
+                        av = set(av)
+                        if rv.issubset(av) or av.issubset(rv):
+                            # print(f"rv: {rv}, av: {av}")
+                            # print("rv.issubset(av) or av.issubset(rv)")
+                            break
+                    else:
+                        new_sigs.append(sig)
+            
+        
         return new_sigs
     return sigs
 
@@ -1237,41 +1240,42 @@ class Test:
                     # patch_effect, _ = patch_info
                     # vuln_effect, patch_effect = sig.sig_dict["remove"], sig.sig_dict["add"]
                     vuln_effect, patch_effect = sig.collect[0], sig.collect[1] # vuln_effect, patch_effect는 dict 형태
-
-                    for vuln_key, vuln_value in list(vuln_effect.items()):
-                        for patch_key, patch_value in list(patch_effect.items()):
-                            # print(f"vuln_key: {vuln_key}, vuln_value: {vuln_value}")
-                            # print(f"patch_key: {patch_key}, patch_value: {patch_value}")
-                            old_vuln_key, old_patch_key = deepcopy(vuln_key[0]), deepcopy(patch_key[0])
-                            new_vuln_key, new_patch_key =  rebuild_effects(vuln_key[0]), rebuild_effects(patch_key[0])
-                            assert new_vuln_key == old_vuln_key, f"new_vuln_key {new_vuln_key} != old_vuln_key {old_vuln_key}"
-                            assert new_patch_key == old_patch_key, f"new_patch_key {new_patch_key} != old_patch_key {old_patch_key}"
-                            vuln_key, patch_key = (new_vuln_key, vuln_key[1]) , (new_patch_key, patch_key[1])
-                            if vuln_key == patch_key:
-                                # print(f"vuln_value: {vuln_value}, patch_value: {patch_value}")
-                                v, p = list(set(vuln_value) - set(patch_value)), list(set(patch_value) - set(vuln_value))
-                                # refinement
-                                if v and p:
-                                    # both have values, refine them
-                                        refined_v, refined_p = refine_sig(v, p)
-                                        vuln_effect[vuln_key] = refined_v
-                                        patch_effect[patch_key] = refined_p
-                                elif v:
-                                    # only vuln has values, refine vuln
-                                    refined_v = single_refine(v)
-                                    vuln_effect[vuln_key] = refined_v
-                                    if patch_key in patch_effect:
-                                        del patch_effect[patch_key]
+                    vuln_effect = single_refine(vuln_effect)
+                    patch_effect = single_refine(patch_effect)
+                    # for vuln_key, vuln_value in list(vuln_effect.items()):
+                        # for patch_key, patch_value in list(patch_effect.items()):
+                        #     # print(f"vuln_key: {vuln_key}, vuln_value: {vuln_value}")
+                        #     # print(f"patch_key: {patch_key}, patch_value: {patch_value}")
+                        #     old_vuln_key, old_patch_key = deepcopy(vuln_key[0]), deepcopy(patch_key[0])
+                        #     new_vuln_key, new_patch_key =  rebuild_effects(vuln_key[0]), rebuild_effects(patch_key[0])
+                        #     assert new_vuln_key == old_vuln_key, f"new_vuln_key {new_vuln_key} != old_vuln_key {old_vuln_key}"
+                        #     assert new_patch_key == old_patch_key, f"new_patch_key {new_patch_key} != old_patch_key {old_patch_key}"
+                        #     vuln_key, patch_key = (new_vuln_key, vuln_key[1]) , (new_patch_key, patch_key[1])
+                        #     if vuln_key == patch_key:
+                        #         # print(f"vuln_value: {vuln_value}, patch_value: {patch_value}")
+                        #         v, p = list(set(vuln_value) - set(patch_value)), list(set(patch_value) - set(vuln_value))
+                        #         # refinement
+                        #         if v and p:
+                        #             # both have values, refine them
+                        #                 refined_v, refined_p = refine_sig(v, p)
+                        #                 vuln_effect[vuln_key] = refined_v
+                        #                 patch_effect[patch_key] = refined_p
+                        #         elif v:
+                        #             # only vuln has values, refine vuln
+                        #             refined_v = single_refine(v)
+                        #             vuln_effect[vuln_key] = refined_v
+                        #             if patch_key in patch_effect:
+                        #                 del patch_effect[patch_key]
                                     
-                                elif p:
-                                    # only patch has values, refine patch
-                                    refined_p = single_refine(p)
-                                    patch_effect[patch_key] = refined_p
-                                    if vuln_key in vuln_effect:
-                                        del vuln_effect[vuln_key]
-                                else:
-                                    del vuln_effect[vuln_key]
-                                    del patch_effect[patch_key]
+                        #         elif p:
+                        #             # only patch has values, refine patch
+                        #             refined_p = single_refine(p)
+                        #             patch_effect[patch_key] = refined_p
+                        #             if vuln_key in vuln_effect:
+                        #                 del vuln_effect[vuln_key]
+                        #         else:
+                        #             del vuln_effect[vuln_key]
+                        #             del patch_effect[patch_key]
 
                     sig.sig_dict["add"] = patch_effect
                     sig.sig_dict["remove"] = vuln_effect

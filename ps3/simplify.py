@@ -29,13 +29,16 @@ def unwrap_const(expr):
             unwrap_const(expr.args[0]),
             unwrap_const(expr.args[1]),
         )
+    
     return expr
 
 # ---------- 1) 단일 식(Expr) 수준 ----------
 def is_generalization_of(g, c, depth=0):
     tab = "  " * depth  # indent for debugging
+    # print(f"{tab}Before unwrap, is_generalization_of: {type(g)} {g} vs {type(c)} {c} (depth={depth})")
     g = unwrap_const(g)
     c = unwrap_const(c)
+    # print(f"{tab}After unwrap, is_generalization_of: {type(g)} {g} vs {type(c)} {c} (depth={depth})")
     if isinstance(g, pe.Const) and isinstance(c, int):
         # Const는 int로 취급
         g = g.con
@@ -117,26 +120,29 @@ def effect_generalization(g, c):
         return False
 
     # Put 예시
-    if g.__class__.__name__ == "Put":
+    if isinstance(g, Effect.Put):
         dst_g = getattr(g, "reg", getattr(g, "offset", None))
         dst_c = getattr(c, "reg", getattr(c, "offset", None))
         if dst_g != dst_c:
             return False
         return is_generalization_of(g.expr, c.expr)
-
     # Condition
-    if g.__class__.__name__ == "Condition":
+    if isinstance(g, Effect.Condition):
         return is_generalization_of(g.expr, c.expr)
 
     # Call
-    if g.__class__.__name__ == "Call":
+    if isinstance(g, Effect.Call):
         # 각 인자 쌍이 한쪽이 다른 쪽을 일반화하거나, 반대도 일반화하면 True
         return all(
             # print(f"Comparing args: {ga} and {ca} / {is_generalization_of(ga, ca)} and {is_generalization_of(ca, ga)}") or
             is_generalization_of(ga, ca) or is_generalization_of(ca, ga)
             for ga, ca in zip(g.args, c.args)
         )
-
+    # Store
+    if isinstance(g, Effect.Store):
+        # Store는 addr, value 모두 비교
+        return (is_generalization_of(g.addr, c.addr) and
+                is_generalization_of(g.value, c.value))
     # Store, Return 등 필요시 추가
     return False
 
@@ -200,26 +206,41 @@ def contains_anysymbol(expr) -> bool:
     """
     expr(Effect, pyvex expr 등) 내부에 AnySymbol이 하나라도 포함되어 있으면 True.
     """
-    # 1. unwrap Const 등으로 감싸진 것
     expr = unwrap_const(expr)
 
-    # 2. 직접 AnySymbol이면 True
     if isinstance(expr, AnySymbol):
         return True
 
-    # 3. pyvex expr: args 속성 재귀 검사
+    # Effect 객체의 주요 필드 검사
+    if hasattr(expr, "expr"):
+        if contains_anysymbol(expr.expr):
+            return True
     if hasattr(expr, "args"):
         for arg in expr.args:
             if contains_anysymbol(arg):
                 return True
+    if hasattr(expr, "addr"):
+        if contains_anysymbol(expr.addr):
+            return True
 
-    # 4. 사용자 정의 객체: __dict__의 값들 재귀 검사
+    # pyvex.expr.ITE 등: cond, iftrue, iffalse
+    if hasattr(expr, "cond") and contains_anysymbol(expr.cond):
+        return True
+    if hasattr(expr, "iftrue") and contains_anysymbol(expr.iftrue):
+        return True
+    if hasattr(expr, "iffalse") and contains_anysymbol(expr.iffalse):
+        return True
+
+    # pyvex.expr.Load 등: addr
+    if hasattr(expr, "value") and contains_anysymbol(expr.value):
+        return True
+
+    # 사용자 정의 객체: __dict__의 값들 재귀 검사
     if hasattr(expr, "__dict__"):
         for v in expr.__dict__.values():
             if contains_anysymbol(v):
                 return True
 
-    # 5. 리스트/튜플 등
     if isinstance(expr, (list, tuple)):
         for e in expr:
             if contains_anysymbol(e):
@@ -238,8 +259,6 @@ def equal(expr1, expr2) -> bool:
     """
     구조-일반화(PER)·AnySymbol·Z3 논리적 동등성을 모두 고려하는 비교 함수.
     """
-    # print(f"Comparing: {type(expr1)} type of {expr1} and {type(expr2)} type of {expr2}")
-
     # 처음엔 effect로 시작
     if is_effect_instance(expr1) and is_effect_instance(expr2):
         # 0. 껍데기 제거
@@ -258,9 +277,12 @@ def equal(expr1, expr2) -> bool:
         # print(f"expr1 contains AnySymbol: {contains_anysymbol(expr1)}")
         # print(f"expr2 contains AnySymbol: {contains_anysymbol(expr2)}")
         # 1. 구조적 PER 먼저 (refine 부터 AnySymbol이 있을 수 있으므로 이때부터는 구조적 PER)
+        
         if contains_anysymbol(expr1) or contains_anysymbol(expr2):
-            # print("Using per_related due to AnySymbol presence")
-            return per_related(expr1, expr2)
+            t = per_related(expr1, expr2)
+            print("Using per_related due to AnySymbol presence")
+            print(f"per_related(expr1, expr2): {t}")
+            return t
         else:
             if isinstance(expr1, Effect.Call) and isinstance(expr2, Effect.Call):
                 # return expr1 == expr2

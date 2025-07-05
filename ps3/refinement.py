@@ -86,17 +86,22 @@ def refine_one(myself: list[InspectInfo], other: list[InspectInfo]) -> list[Insp
         go = True
         # print("go into other with info:", info)
         root = effect_to_node(info.ins)
+        first = True
         for generalized_tree in tree_possible_subs(root, fallback_effect=effect):
+            if first:
+                first = False
+                continue
             new_effect = generalized_tree   
             new_info = InspectInfo(new_effect)
-            temp.append(new_info)
-
+            # temp.append(new_info)
+            print(f"RALO: new_info: {new_info}, type(new_info): {type(new_info)}, type(other): {type(other)}")
             if go and new_info not in other :
-                # print(f"refine_one: {new_info} not in other")
+                print(f"refine_one: {new_info} not in other, {new_info in other}, type(other){type(other)}, type(new_info): {type(new_info)}")
+                for a in other:
+                    print(f"new_info == i: {new_info == a}, new_info: {new_info}, i: {a}")
                 myself[i] = new_info
                 go = False
                 break  # 다른 효과와 겹치지 않는 첫 번째 generalized_tree를 찾으면 중단
-
     return myself 
 
 def generalize_node(node: Node) -> Node:
@@ -450,6 +455,8 @@ def rebuild_effects(effect: InspectInfo) -> InspectInfo:
     concat = "Concat"
     hat = "^"
     extract = "Extract"
+    bit_not = "~"
+    
     if concat in original_str or hat in original_str or extract in original_str:
         # Concat이나 ^가 있는 경우는 처리하지 않음
         return effect
@@ -461,10 +468,14 @@ def rebuild_effects(effect: InspectInfo) -> InspectInfo:
             reg = int(reg_part)
             expr = parse_expr(normalize_str(expr_part))
             ret = InspectInfo(Effect.Put(reg, expr))
-            if normalize_str(original_str) != normalize_str(str(ret)):
-                print(f"Rebuild failed for Put: {original_str} != {str(ret)}")
-                print(f"effect.ins.expr: {effect.ins.expr}")
-                exit(1)
+            if normalize_str(original_str) != normalize_str(str(ret)) and effect != ret:
+                logger.info(f"Rebuild failed for Put: {original_str} != {str(ret)}")
+                logger.info(f"effect.ins.expr: {effect.ins.expr}")
+                logger.info(f"ret.ins.expr: {ret.ins.expr}")
+                logger.info(f"effect == ret: {effect == ret}")
+                logger.info("=" * 50)
+                # exit(1)
+                return effect
             return ret
         elif "Call: " in original_str:
             m = re.match(r"Call: ([^(]+)\((.*)\)", original_str)
@@ -490,9 +501,14 @@ def rebuild_effects(effect: InspectInfo) -> InspectInfo:
                 args.append(current.strip())
             args = [parse_expr(normalize_str(a)) for a in args]
             ret = InspectInfo(Effect.Call(name, args))
-            if normalize_str(original_str) != normalize_str(str(ret)):
-                print(f"Rebuild failed for Call: {original_str} != {str(ret)}")
-                exit(1)
+            if normalize_str(original_str) != normalize_str(str(ret)) and effect != ret:
+                logger.info(f"Rebuild failed for Call: {original_str} != {str(ret)}")
+                logger.info(f"effect.ins.expr: {effect.ins.args}")
+                logger.info(f"ret.ins.expr: {ret.ins.args}")
+                logger.info(f"effect == ret: {effect == ret}")
+                logger.info("=" * 50)
+                # exit(1)
+                return effect
             return ret
         elif "Condition: " in original_str:
             expr_part = original_str.replace("Condition: ", "").strip()
@@ -500,18 +516,28 @@ def rebuild_effects(effect: InspectInfo) -> InspectInfo:
             
             expr = parse_expr(normalize_str(expr_part))
             ret = InspectInfo(Effect.Condition(expr))
-            if normalize_str(original_str) != normalize_str(str(ret)):
-                print(f"Rebuild failed for Condition: {original_str} != {str(ret)}")
-                if original_str != "Condition: If(1 == Mem(18446744073709551549 + SR(48)), 0, 1)":
-                    exit(1)
+            if normalize_str(original_str) != normalize_str(str(ret)) and effect != ret:
+                logger.info(f"Rebuild failed for Condition: {original_str} != {str(ret)}")
+                # if original_str != "Condition: If(1 == Mem(18446744073709551549 + SR(48)), 0, 1)":
+                logger.info(f"effect.ins.expr: {effect.ins.expr}")
+                logger.info(f"ret.ins.expr: {ret.ins.expr}")
+                logger.info(f"effect == ret: {effect == ret}")
+                logger.info("=" * 50)
+                # exit(1)
+                return effect
             return ret
         elif "Return: " in original_str:
             expr_part = original_str.replace("Return: ", "").strip()
             expr = parse_expr(normalize_str(expr_part))
             ret = InspectInfo(Effect.Return(expr))
-            if normalize_str(original_str) != normalize_str(str(ret)):
+            if normalize_str(original_str) != normalize_str(str(ret)) and effect != ret:
                 print(f"Rebuild failed for Return: {original_str} != {str(ret)}")
-                exit(1)
+                logger.info(f"effect.ins.expr: {effect.ins.expr}")
+                logger.info(f"ret.ins.expr: {ret.ins.expr}")
+                logger.info(f"effect == ret: {effect == ret}")
+                logger.info("=" * 50)
+                # exit(1)
+                return effect
             return ret
         elif "Store: " in original_str:
             parts = original_str.split(" = ")
@@ -520,9 +546,14 @@ def rebuild_effects(effect: InspectInfo) -> InspectInfo:
             addr = parse_expr(normalize_str(addr_part))
             expr = parse_expr(normalize_str(expr_part))
             ret = InspectInfo(Effect.Store(addr, expr))
-            if normalize_str(original_str) != normalize_str(str(ret)):
+            if normalize_str(original_str) != normalize_str(str(ret)) and effect != ret:
                 print(f"Rebuild failed for Store: {original_str} != {str(ret)}")
-                exit(1)
+                print(f"effect.ins.expr: {effect.ins.expr}")
+                print(f"ret.ins.expr: {ret.ins.expr}")
+                print(f"effect == ret: {effect == ret}")
+                logger.info("=" * 50)
+                # exit(1)
+                return effect
             return ret
         else:
             print(f"Unknown effect format: {original_str}")

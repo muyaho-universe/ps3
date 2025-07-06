@@ -77,10 +77,22 @@ def is_generalization_of(g, c, depth=0):
 
     # ----- 진짜 상수(pyVEX Const / IRConst) -----
     if isinstance(g, (Const, IRConst)) and not isinstance(g, SymbolicValue):
+        # print(f"{tab}Const/IRConst: {g} == {c}? {g.con == c.con}")
         return g.con == c.con
 
-    # ----- 심볼릭 값(RegSymbol, ReturnSymbol, …) -----
+    # ----- 심볼릭 값(RegSymbol, ReturnSymbol, MemSymbol 등) -----
+    if isinstance(g, MemSymbol) and isinstance(c, MemSymbol):
+        # print(f"{tab}MemSymbol: {g} vs {c} (compare address)")
+        return is_generalization_of(g.address, c.address, depth+1)
+    if isinstance(g, RegSymbol) and isinstance(c, RegSymbol):
+        # print(f"{tab}RegSymbol: {g} vs {c} (compare offset)")
+        return is_generalization_of(g.offset, c.offset, depth+1)
+    if isinstance(g, ReturnSymbol) and isinstance(c, ReturnSymbol):
+        # print(f"{tab}ReturnSymbol: {g} vs {c} (compare name)")
+        return is_generalization_of(g.name, c.name, depth+1)
+    # 기존 SymbolicValue 분기(위 세 타입이 아닌 경우만)
     if isinstance(g, SymbolicValue):
+        # print(f"{tab}SymbolicValue: {g} == {c}? {g == c}")
         return g == c          # __eq__ 이미 구현됨
     # 3) Unop
     if isinstance(g, Unop):
@@ -93,46 +105,62 @@ def is_generalization_of(g, c, depth=0):
         same_op = g.op == c.op
         # print(f"{tab}Binop op {g.op} == {c.op}? {same_op}")
         if not same_op:
+            # print(f"{tab}Binop op mismatch: {g.op} vs {c.op}")
             return False
         # 순서 유지
         # print(f"{tab}Binop args: {g.args}, {g.args[0]},  {g.args[1]} vs {c.args}, {c.args[0]},  {c.args[1]}")
-        if (is_generalization_of(g.args[0], c.args[0], depth+1) and
-            is_generalization_of(g.args[1], c.args[1], depth+1)):
+        t = (is_generalization_of(g.args[0], c.args[0], depth+1) and
+            is_generalization_of(g.args[1], c.args[1], depth+1))
+        # print(f"{tab}Binop args match? {t}")
+        if t:
             return True
         # 교환 법칙
         if g.op in COMMUTATIVE_OPS:
-            return (is_generalization_of(g.args[0], c.args[1], depth+1) and
+            # print(f"{tab}Checking commutative match for {g.op}")
+            t = (is_generalization_of(g.args[0], c.args[1], depth+1) and
                     is_generalization_of(g.args[1], c.args[0], depth+1))
-        
+            # print(f"{tab}Commutative match? {t}")
+            return t
+        # print(f"{tab}Binop args do not match: {g.args} vs {c.args}")
         return False
 
     # 5) Load
     if isinstance(g, Load):
-        return is_generalization_of(g.addr, c.addr, depth+1)
+        # print(f"{tab}Load: {g.addr} vs {c.addr}")
+        t = is_generalization_of(g.addr, c.addr, depth+1)
+        # print(f"{tab}Load addr match? {t}")
+        return t
 
     # 6) ITE (If-Then-Else)
     if hasattr(pe, "ITE") and isinstance(g, pe.ITE) and isinstance(c, pe.ITE):
-        return (
+        # print(f"{tab}ITE: {g.cond} vs {c.cond}, {g.iftrue} vs {c.iftrue}, {g.iffalse} vs {c.iffalse}")
+        t = (
             is_generalization_of(g.cond, c.cond, depth+1) and
             is_generalization_of(g.iftrue, c.iftrue, depth+1) and
             is_generalization_of(g.iffalse, c.iffalse, depth+1)
         )
+        # print(f"{tab}ITE match? {t}")
+        return t
 
     # 7) Call (pyvex.expr.CCall)
     if hasattr(pe, "CCall") and isinstance(g, pe.CCall) and isinstance(c, pe.CCall):
         # 함수명과 인자 수가 같아야 함
         if getattr(g, "cee", None) != getattr(c, "cee", None):
+            # print(f"{tab}CCall cee mismatch: {g.cee} vs {c.cee}")
             return False
         if len(g.args) != len(c.args):
+            # print(f"{tab}CCall arg count mismatch: {len(g.args)} vs {len(c.args)}")
             return False
-        return all(is_generalization_of(ga, ca, depth+1) for ga, ca in zip(g.args, c.args))
+        t = all(is_generalization_of(ga, ca, depth+1) for ga, ca in zip(g.args, c.args))
+        return t
 
-    print(f"{tab}Unhandled node type {type(g).__name__}")
+    # print(f"{tab}Unhandled node type {type(g).__name__}")
     return False
 
 # ---------- 2) Effect(예: Put, Condition …) 수준 ----------
 def effect_generalization(g, c):
     if type(g) is not type(c):
+        # print(f"Type mismatch: {type(g).__name__} vs {type(c).__name__}")
         return False
 
     # Put 예시
@@ -140,26 +168,36 @@ def effect_generalization(g, c):
         dst_g = getattr(g, "reg", getattr(g, "offset", None))
         dst_c = getattr(c, "reg", getattr(c, "offset", None))
         if dst_g != dst_c:
+            # print(f"Destination mismatch: {dst_g} vs {dst_c}")
             return False
-        return is_generalization_of(g.expr, c.expr)
+        t = is_generalization_of(g.expr, c.expr)
+        # print(f"Put: {dst_g} vs {dst_c}, checking exprs, result: {t}")
+        return t
     # Condition
     if isinstance(g, Effect.Condition):
-        return is_generalization_of(g.expr, c.expr)
+        t = is_generalization_of(g.expr, c.expr)
+        # print(f"Condition: {g.expr} vs {c.expr}, result: {t}")
+        return t
 
     # Call
     if isinstance(g, Effect.Call):
         # 각 인자 쌍이 한쪽이 다른 쪽을 일반화하거나, 반대도 일반화하면 True
-        return all(
+        t = all(
             # print(f"Comparing args: {ga} and {ca} / {is_generalization_of(ga, ca)} and {is_generalization_of(ca, ga)}") or
             is_generalization_of(ga, ca) or is_generalization_of(ca, ga)
             for ga, ca in zip(g.args, c.args)
         )
+        # print(f"Call: {g.args} vs {c.args}, result: {t}")
+        return t
     # Store
     if isinstance(g, Effect.Store):
         # Store는 addr, value 모두 비교
-        return (is_generalization_of(g.addr, c.addr) and
-                is_generalization_of(g.value, c.value))
+        t = (is_generalization_of(g.addr, c.addr) and
+                is_generalization_of(g.expr, c.expr))
+        # print(f"Store: {g.addr} vs {c.addr}, {g.value} vs {c.value}, result: {t}")
+        return t
     # Store, Return 등 필요시 추가
+    # print(f"Unhandled Effect type: {type(g).__name__}")
     return False
 
 

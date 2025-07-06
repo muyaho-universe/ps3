@@ -377,12 +377,20 @@ class Simulator:
                                 
                                 # parent_cond = t
                                 # key = (t, is_true_branch)
-                                if key not in list(new_collect.keys()):
-                                    new_collect[key] = []
+                                
+                                new_collect.setdefault(key, [])
+                                # if key not in list(new_collect.keys()):
+                                #     new_collect[key] = []
                                 for _, item in collect.get(k, {}).items():
-                                    new_collect.setdefault(key, [])
+                                    # print(f"Trying to access key: {key}")
+                                    # print(f"Current keys: {list(new_collect.keys())}")
                                     if isinstance(item, list):
-                                        new_collect[key].extend(item)
+                                        try:
+                                            new_collect[key].extend(item)
+                                        except Exception as e:
+                                            print(f"Trying to access key: {key}")
+                                            print(f"Current keys: {list(new_collect.keys())}")
+                                            exit(0)
                                     else:
                                         new_collect[key].append(item)
                             #    for _, item in collect[k].items():
@@ -1248,6 +1256,8 @@ class Test:
                     vuln_effect, patch_effect = sig.collect[0], sig.collect[1] # vuln_effect, patch_effect는 dict 형태
                     vuln_effect = single_refine(vuln_effect)
                     patch_effect = single_refine(patch_effect)
+                    logger.info(f"refined vuln_effect: {vuln_effect}")
+                    logger.info(f"refined patch_effect: {patch_effect}")
                     # for vuln_key, vuln_value in list(vuln_effect.items()):
                         # for patch_key, patch_value in list(patch_effect.items()):
                         #     # print(f"vuln_key: {vuln_key}, vuln_value: {vuln_value}")

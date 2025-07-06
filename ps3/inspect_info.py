@@ -36,8 +36,20 @@ class InspectInfo:
     # def __hash__(self) -> int:
     #     return hash(self.ins[0])
     
-    def __hash__(self) -> int:
-        return hash(str(self))
+    def __hash__(self):
+        # 내부 expr의 논리적 값 기반으로 hash 생성
+        if isinstance(self.ins, Effect.Call):
+            return hash((self.ins.name, tuple(map(str, self.ins.args))))
+        elif isinstance(self.ins, Effect.Condition):
+            return hash(("Condition", str(self.ins.expr)))
+        elif isinstance(self.ins, Effect.Return):
+            return hash(("Return", str(self.ins.expr)))
+        elif isinstance(self.ins, Effect.Put):
+            return hash(("Put", self.ins.reg, str(self.ins.expr)))
+        elif isinstance(self.ins, Effect.Store):
+            return hash(("Store", str(self.ins.addr), str(self.ins.expr)))
+        else:
+            return hash(str(self))
 
     # def __eq__(self, __o: object) -> bool:
     #     if isinstance(__o, InspectInfo):

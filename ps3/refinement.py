@@ -111,11 +111,11 @@ def generalize_node(node: Node) -> Node:
     # # Mem 노드이며 자식이 int면 T로 대체
     # if node.label == "Mem" and node.children and node.children[0].label.startswith("int: "):
     #     return Node("Const: T", [Node("Const: T", level=node.level+1)], level=node.level)
-    # int값이 1000000000000000000보다 크면 T로 대체
+    # int값이 1000000 크면 T로 대체 6828016
     if node.label.startswith("int: "):
         try:
             val = int(node.label[len("int: "):])
-            if val >= 1000000000000000000:
+            if val >= 1000000:
                 return Node("Const: T", level=node.level)
         except Exception:
             pass
@@ -158,9 +158,9 @@ def single_refine(myself: dict[(InspectInfo, bool):list[InspectInfo]]) -> dict[(
         for info in value:
             new_info = rebuild_effects(info)
             assert new_info == info, f"Rebuild failed for info {new_info}\n!=\n {info}"
-            if isinstance(new_info.ins, (Effect.Call, Effect.Condition)):
+            # if isinstance(new_info.ins, (Effect.Call, Effect.Condition)):
                 # Call 또는 Condition인 경우, 그 안의 expr를 T로 바꿈
-                new_info = single_refine_one(new_info)
+            new_info = single_refine_one(new_info)
             my_effects[key].append(new_info)
     return my_effects
 

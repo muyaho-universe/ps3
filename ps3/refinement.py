@@ -130,7 +130,12 @@ def single_refine_one(info: InspectInfo) -> InspectInfo:
     effect = deepcopy(info.ins)
     root = effect_to_node(info.ins)
     new_tree = generalize_node(root)
-    new_effect = node_to_effect(new_tree, fallback_effect=effect)
+    try:
+        new_effect = node_to_effect(new_tree, fallback_effect=effect)
+    except Exception as e:
+        print(f"info: {info}")
+        new_tree.print()
+        raise e
     
     return InspectInfo(new_effect)
 
@@ -281,14 +286,15 @@ def parse_expr(expr_str):
             return Binop(op_name, [parse_expr(left), parse_expr(right)])
         
      # FakeRet
+    if expr_str == "FakeRet":
+        return ReturnSymbol(None)
     if expr_str.startswith("FakeRet(") and expr_str.endswith(")"): 
         inner = extract_inner(expr_str, "FakeRet(").strip()
         parsed = parse_expr(inner)
         if isinstance(parsed, ReturnSymbol):
             return parsed
         return ReturnSymbol(parsed)
-    if expr_str == "FakeRet":
-        return ReturnSymbol(None)
+    
     # Mem
     if expr_str.startswith("Mem(") and expr_str.endswith(")"):
         inner = extract_inner(expr_str, "Mem(").strip()
@@ -687,7 +693,10 @@ def expr_to_node(expr, level=0) -> Node:
     elif isinstance(expr, str):
         return Node(f"str: \"{expr}\"", level=level)
     elif isinstance(expr, ReturnSymbol):
-        return Node(f"ReturnSymbol", [expr_to_node(expr.name, level + 1)], level=level)
+    # FakeRet (즉, expr.name이 None)인 경우
+        if getattr(expr, "name", None) is None:
+            return Node("ReturnSymbol", level=level)
+        return Node("ReturnSymbol", [expr_to_node(expr.name, level + 1)], level=level)
     elif isinstance(expr, (pc.F32, pc.F64, pc.U1, pc.U8, pc.U16, pc.U32, pc.U64)):
         return Node(f"IRConst: {expr.value}", level=level)
 
@@ -775,6 +784,8 @@ def node_to_expr(node: Node):
         return AnySymbol()
 
     elif node.label == "ReturnSymbol":
+        if not node.children:
+            return ReturnSymbol(None)
         return ReturnSymbol(node_to_expr(node.children[0]))
     
     elif node.label.startswith("IRConst: "):
@@ -806,6 +817,7 @@ def node_to_expr(node: Node):
         return RegSymbol(offset)
 
     else:
+        node.print()
         raise ValueError(f"Unknown node label: {node.label}")
     
 

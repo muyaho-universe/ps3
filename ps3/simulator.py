@@ -379,14 +379,20 @@ class Simulator:
                                 # key = (t, is_true_branch)
                                 if key not in list(new_collect.keys()):
                                     new_collect[key] = []
-                                for _, item in collect[k].items():
-                                    if key not in new_collect:
-                                        new_collect[key] = []
-                                    # item이 리스트가 아닐 수도 있으니 리스트로 변환
+                                for _, item in collect.get(k, {}).items():
+                                    new_collect.setdefault(key, [])
                                     if isinstance(item, list):
                                         new_collect[key].extend(item)
                                     else:
                                         new_collect[key].append(item)
+                            #    for _, item in collect[k].items():
+                            #        if key not in new_collect:
+                            #            new_collect[key] = []
+                                    # item이 리스트가 아닐 수도 있으니 리스트로 변환
+                            #        if isinstance(item, list):
+                            #            new_collect[key].extend(item)
+                            #        else:
+                            #            new_collect[key].append(item)
                                 # print(f"new_collect: {new_collect}"
                                     
                                 # i = clean(new_collect[key])
@@ -1353,7 +1359,7 @@ class Test:
                                     # key 없음
                                     in_true_branch = False
                                 else:
-                                    if patch_effect[(pv, True)] != all_effects[(pv, True)]:
+                                    if (pv, True) in patch_effect and patch_effect[(pv, True)] != all_effects[(pv, True)]:
                                         # test = True
                                         # result.append("vuln")
                                         # logger.info(f"VALUE MATCHING FAILED: all_effects[{pv}] are different from {patch_effect[pv]}; {all_effects[pv]}")
@@ -1365,7 +1371,7 @@ class Test:
                                     if (pv, False) not in all_effects:
                                         in_false_branch = False
                                     else:
-                                        if patch_effect[(pv, False)] != all_effects[(pv, False)]:
+                                        if (pv, False) in patch_effect and patch_effect[(pv, False)] != all_effects[(pv, False)]:
                                             in_false_branch = False
                                 if not in_true_branch and not in_false_branch:
                                     logger.info(f"KEY MATCHING FALIED: {patch_key} and {pv}'s True and False are not in all_effects; {all_effects.keys()}")
@@ -1415,7 +1421,7 @@ class Test:
                                     # key 없음
                                     in_true_branch = False
                                 else:
-                                    if vuln_effect[(vv, True)] != all_effects[(vv, True)]:
+                                    if (vv, True) in vuln_effect and vuln_effect[(vv, True)] != all_effects[(vv, True)]:
                                         # test = True
                                         # result.append("patch")
                                         # logger.info(f"VALUE MATCHING FAILED: all_effects[{vv}] are different from {vuln_effect[vv]}; {all_effects[vv]}")
@@ -1427,7 +1433,7 @@ class Test:
                                     if (vv, False) not in all_effects:
                                         in_false_branch = False
                                     else:
-                                        if vuln_effect[(vv, False)] != all_effects[(vv, False)]:
+                                        if (vv, False) in vuln_effect and vuln_effect[(vv, False)] != all_effects[(vv, False)]:
                                             in_false_branch = False
                                 if not in_true_branch and not in_false_branch:
                                     logger.info(f"KEY MATCHING FALIED: {vuln_key} and {vv}'s True and False are not in all_effects; {all_effects.keys()}")

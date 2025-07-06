@@ -110,7 +110,23 @@ def is_generalization_of(g, c, depth=0):
     if isinstance(g, Load):
         return is_generalization_of(g.addr, c.addr, depth+1)
 
-    # …Call, ITE 등 필요한 타입 추가
+    # 6) ITE (If-Then-Else)
+    if hasattr(pe, "ITE") and isinstance(g, pe.ITE) and isinstance(c, pe.ITE):
+        return (
+            is_generalization_of(g.cond, c.cond, depth+1) and
+            is_generalization_of(g.iftrue, c.iftrue, depth+1) and
+            is_generalization_of(g.iffalse, c.iffalse, depth+1)
+        )
+
+    # 7) Call (pyvex.expr.CCall)
+    if hasattr(pe, "CCall") and isinstance(g, pe.CCall) and isinstance(c, pe.CCall):
+        # 함수명과 인자 수가 같아야 함
+        if getattr(g, "cee", None) != getattr(c, "cee", None):
+            return False
+        if len(g.args) != len(c.args):
+            return False
+        return all(is_generalization_of(ga, ca, depth+1) for ga, ca in zip(g.args, c.args))
+
     print(f"{tab}Unhandled node type {type(g).__name__}")
     return False
 
@@ -280,8 +296,8 @@ def equal(expr1, expr2) -> bool:
         
         if contains_anysymbol(expr1) or contains_anysymbol(expr2):
             t = per_related(expr1, expr2)
-            print("Using per_related due to AnySymbol presence")
-            print(f"per_related(expr1, expr2): {t}")
+            # print("Using per_related due to AnySymbol presence")
+            # print(f"per_related(expr1, expr2): {t}")
             return t
         else:
             if isinstance(expr1, Effect.Call) and isinstance(expr2, Effect.Call):

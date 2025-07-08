@@ -147,13 +147,14 @@ def single_refine(myself: dict[(InspectInfo, bool):list[InspectInfo]]) -> dict[(
     old_myself = deepcopy(myself)
     my_effects = {}
     for key, value in myself.items():
-        key_info = key[0] 
-        old_key = deepcopy(key_info)
-        new_key_info = rebuild_effects(key_info)
-        assert new_key_info == old_key, f"Rebuild failed for key {new_key_info}\n!=\n {old_key}"
-        
-        rebuild_new_key = single_refine_one(new_key_info)
-        key = (rebuild_new_key, key[1])  # key는 (InspectInfo, bool) 형태
+        if key != ("None", False):
+            key_info = key[0] 
+            old_key = deepcopy(key_info)
+            new_key_info = rebuild_effects(key_info)
+            assert new_key_info == old_key, f"Rebuild failed for key {new_key_info}\n!=\n {old_key}"
+            
+            rebuild_new_key = single_refine_one(new_key_info)
+            key = (rebuild_new_key, key[1])  # key는 (InspectInfo, bool) 형태
         my_effects[key] = []
         for info in value:
             new_info = rebuild_effects(info)
@@ -359,6 +360,11 @@ def parse_expr(expr_str):
             return Unop("Iop_Not64", [parse_expr(rest)])
         else:
             return Unop("Iop_Not64", [parse_expr(rest)])
+
+    # Not( ... ) 단항 논리 부정 처리
+    if expr_str.startswith("Not(") and expr_str.endswith(")"):
+        inner = expr_str[4:-1].strip()
+        return Unop("Iop_Not64", [parse_expr(inner)])
 
     # int
     if expr_str.isdigit():

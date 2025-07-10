@@ -209,24 +209,24 @@ def refine_sig(vuln_effect: list[InspectInfo], patch_effect: list[InspectInfo]) 
 def parse_expr(expr_str):
     expr_str = expr_str.strip()
     binops = [
-        ("==", "Iop_CmpEQ64"),
-        ("!=", "Iop_CmpNE64"),
-        ("<=", "Iop_CmpLE64S"),
-        (">=", "Iop_CmpGE64S"),
-        ("<", "Iop_CmpLT64S"),
-        (">", "Iop_CmpGT64S"),
-        ("|", "Iop_Or64"),
-        ("^~", "Iop_XorNot64"),
-        ("^", "Iop_Xor64"),
-        ("+", "Iop_Add64"),
-        ("-", "Iop_Sub64"),
-        ("*", "Iop_Mul64"),
-        ("/", "Iop_Div64S"),
-        ("%", "Iop_Mod64S"),
-        ("&", "Iop_And64"),
-        ("<<", "Iop_Shl64"),
-        (">>", "Iop_Shr64S"),
-    ]
+    ("|", "Iop_Or64"),
+    ("^~", "Iop_XorNot64"),
+    ("^", "Iop_Xor64"),
+    ("&", "Iop_And64"),
+    (">>", "Iop_Shr64"),
+    ("<<", "Iop_Shl64"),
+    ("+", "Iop_Add64"),
+    ("-", "Iop_Sub64"),
+    ("*", "Iop_Mul64"),
+    ("/", "Iop_Div64S"),
+    ("%", "Iop_Mod64S"),
+    ("==", "Iop_CmpEQ64"),
+    ("!=", "Iop_CmpNE64"),
+    ("<=", "Iop_CmpLE64S"),
+    (">=", "Iop_CmpGE64S"),
+    ("<", "Iop_CmpLT64S"),
+    (">", "Iop_CmpGT64S"),
+]
     if expr_str.startswith("(") and expr_str.endswith(")"):
         # 괄호가 매칭되는지 확인
         depth = 0
@@ -472,6 +472,9 @@ def rebuild_effects(effect: InspectInfo) -> InspectInfo:
     if concat in original_str or hat in original_str or extract in original_str:
         # Concat이나 ^가 있는 경우는 처리하지 않음
         return effect
+    if len(original_str) > 1000:
+        # 너무 긴 문자열은 처리하지 않음
+        return effect
     try:
         if "Put: " in original_str:
             parts = original_str.split(" = ")
@@ -571,7 +574,7 @@ def rebuild_effects(effect: InspectInfo) -> InspectInfo:
             print(f"Unknown effect format: {original_str}")
             exit(1)
     except Exception as e:
-        print(f"rebuild_effects: 파싱 실패: {effect}, original_str: {normalize_str(original_str)}, error: {e}")
+        print(f"rebuild_effects: 파싱 실패: {effect}, original_str: {normalize_str(original_str)}, error: {e}, len(normalize_str(original_str)): {len(normalize_str(original_str))}")
 
 def simplify_addr_expr(expr):
     """
@@ -716,7 +719,8 @@ def expr_to_node(expr, level=0) -> Node:
     elif isinstance(expr, RegSymbol):
         # RegSymbol은 레지스터를 표현하는 노드로 변환
         return Node("SR", [expr_to_node(expr.offset, level + 1)], level=level)
-        
+    elif isinstance(expr, WildCardSymbol):
+        return Node("WildCard", level=level)
     else:
         return Node(f"[UNKNOWN expr] {expr} ({type(expr).__name__})", level=level)
 
@@ -821,7 +825,8 @@ def node_to_expr(node: Node):
             raise ValueError("Malformed SR node")
         offset = node_to_expr(node.children[0])
         return RegSymbol(offset)
-
+    elif node.label == "WildCard":
+        return WildCardSymbol()
     else:
         node.print()
         raise ValueError(f"Unknown node label: {node.label}")

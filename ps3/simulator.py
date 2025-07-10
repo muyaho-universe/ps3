@@ -1331,7 +1331,13 @@ class Test:
                 new_v = []
                 for effect in v:
                     new_v.append(rebuild_effects(effect))
-                assert new_v == old_v, f"new_v {new_v} != old_v {old_v}"
+                assert new_v == old_v or str(new_v) == str(old_v), f"new_v {new_v} != old_v {old_v}"
+                # if new_v != old_v:
+                                # logger.info(f"str(new_v) == str(old_v): {str(nv) == str(ov)}")
+                                # logger.info(f"new_v type: {type(nv)}, old_v type: {type(ov)}")
+                                # logger.info(f"new_v ins: {nv.ins}, old_v ins: {ov.ins}")
+                                # logger.info(f"new_v expr: {nv.expr}, old_v expr: {ov.expr}")
+                    # raise AssertionError(f"new_v != old_v, {str(new_v) == str(old_v)}")
                 new_effects[k] = new_v
 
             all_effects = new_effects

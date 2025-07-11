@@ -471,12 +471,15 @@ def rebuild_effects(effect: InspectInfo) -> InspectInfo:
     
     if concat in original_str or hat in original_str or extract in original_str:
         # Concat이나 ^가 있는 경우는 처리하지 않음
+        print(f"effect: {effect}, effect.ins.expr: {effect.ins.expr}")
+        exit(0)
         return effect
     if len(original_str) > 1000:
         # 너무 긴 문자열은 처리하지 않음
         return effect
     try:
-        if "Put: " in original_str:
+        # if "Put: " in original_str:
+        if isinstance(effect.ins, Effect.Put):
             parts = original_str.split(" = ")
             reg_part = parts[0].replace("Put: ", "").strip()
             expr_part = parts[1].strip()
@@ -492,7 +495,8 @@ def rebuild_effects(effect: InspectInfo) -> InspectInfo:
                 # exit(1)
                 return effect
             return ret
-        elif "Call: " in original_str:
+        # elif "Call: " in original_str:
+        elif isinstance(effect.ins, Effect.Call):
             m = re.match(r"Call: ([^(]+)\((.*)\)", original_str)
             if not m:
                 raise ValueError(f"Cannot parse Call: {original_str}")
@@ -525,7 +529,8 @@ def rebuild_effects(effect: InspectInfo) -> InspectInfo:
                 # exit(1)
                 return effect
             return ret
-        elif "Condition: " in original_str:
+        # elif "Condition: " in original_str:
+        elif isinstance(effect.ins, Effect.Condition):
             expr_part = original_str.replace("Condition: ", "").strip()
             
             
@@ -541,7 +546,8 @@ def rebuild_effects(effect: InspectInfo) -> InspectInfo:
                 # exit(1)
                 return effect
             return ret
-        elif "Return: " in original_str:
+        # elif "Return: " in original_str:
+        elif isinstance(effect.ins, Effect.Return):
             expr_part = original_str.replace("Return: ", "").strip()
             expr = parse_expr(normalize_str(expr_part))
             ret = InspectInfo(Effect.Return(expr))
@@ -554,7 +560,8 @@ def rebuild_effects(effect: InspectInfo) -> InspectInfo:
                 # exit(1)
                 return effect
             return ret
-        elif "Store: " in original_str:
+        # elif "Store: " in original_str:
+        elif isinstance(effect.ins, Effect.Store):
             parts = original_str.split(" = ")
             addr_part = parts[0].replace("Store: ", "").strip()
             expr_part = parts[-1].strip()

@@ -120,6 +120,7 @@ def generalize_node(node: Node) -> Node:
         except Exception:
             pass
     # 자식 노드들 재귀적으로 처리
+    # if node.label.startswith("IRConst: "):
     new_children = [generalize_node(child) for child in node.children]
     return Node(node.label, new_children, level=node.level)
 
@@ -206,404 +207,300 @@ def refine_sig(vuln_effect: list[InspectInfo], patch_effect: list[InspectInfo]) 
     # exit(1)
     return vuln_effect, patch_effect 
 
-def parse_expr(expr_str):
-    expr_str = expr_str.strip()
-    binops = [
-    ("|", "Iop_Or64"),
-    ("^~", "Iop_XorNot64"),
-    ("^", "Iop_Xor64"),
-    ("&", "Iop_And64"),
-    (">>", "Iop_Shr64"),
-    ("<<", "Iop_Shl64"),
-    ("+", "Iop_Add64"),
-    ("-", "Iop_Sub64"),
-    ("*", "Iop_Mul64"),
-    ("/", "Iop_Div64S"),
-    ("%", "Iop_Mod64S"),
-    ("==", "Iop_CmpEQ64"),
-    ("!=", "Iop_CmpNE64"),
-    ("<=", "Iop_CmpLE64S"),
-    (">=", "Iop_CmpGE64S"),
-    ("<", "Iop_CmpLT64S"),
-    (">", "Iop_CmpGT64S"),
-]
-    if expr_str.startswith("(") and expr_str.endswith(")"):
-        # 괄호가 매칭되는지 확인
-        depth = 0
-        for i, ch in enumerate(expr_str):
-            if ch == "(":
-                depth += 1
-            elif ch == ")":
-                depth -= 1
-                if depth == 0 and i != len(expr_str) - 1:
-                    break
+
+# def strip_trivial_unop(expr):
+#     """
+#     의미 없는 타입 변환(Unop) 껍데기를 재귀적으로 벗기고 core만 반환.
+#     예: Unop("Iop_32Uto64", Unop("Iop_64to32", x)) -> strip_trivial_unop(x)
+#     """
+#     # 의미 없는 변환 목록 (필요시 추가)
+#     trivial_unops = {
+#         # Zero/Sign extend, truncate
+#         "Iop_8Uto32", "Iop_16Uto32", "Iop_32Uto64", "Iop_8Uto64", 
+#         # "Iop_1Uto64",
+#         "Iop_8Sto32", "Iop_16Sto32", "Iop_32Sto64", "Iop_8Sto64", "Iop_1Sto64",
+#         "Iop_64to32", "Iop_32to8", "Iop_32to16", "Iop_64to8", "Iop_64to16",
+#         "Iop_8to32", "Iop_16to32", "Iop_8to64", "Iop_16to64", "Iop_32to64",
+#         "Iop_64to1",
+#         # Identity/bitcast
+#         "Iop_Identity32", "Iop_Identity64", "Iop_Identity8", "Iop_Identity16",
+#         "Iop_Bitcast32to32", "Iop_Bitcast64to64",
+#         # Redundant ZeroExt/SignExt
+#         "Iop_ZeroExt8to8", "Iop_ZeroExt16to16", "Iop_ZeroExt32to32", "Iop_ZeroExt64to64",
+#         "Iop_SignExt8to8", "Iop_SignExt16to16", "Iop_SignExt32to32", "Iop_SignExt64to64",
+#         # Redundant Extract/Concat
+#         "Iop_Extract8", "Iop_Extract16", "Iop_Extract32", "Iop_Extract64",
+#         "Iop_Concat8", "Iop_Concat16", "Iop_Concat32", "Iop_Concat64",
+#         # No-op
+#         "Iop_Copy", "Iop_Move",
+#         # 기타
+#         "Iop_1Uto8", "Iop_1Uto16", "Iop_1Uto32",
+#         "Iop_8Uto8", "Iop_16Uto16", "Iop_32Uto32", "Iop_64Uto64",
+#     }
+#     # Unop이면서 의미 없는 변환이면 재귀적으로 벗김
+#     while isinstance(expr, Unop) and expr.op in trivial_unops:
+#         expr = expr.args[0]
+#     # 내부도 재귀적으로 처리
+#     if isinstance(expr, Unop):
+#         return Unop(expr.op, [strip_trivial_unop(expr.args[0])])
+#     elif isinstance(expr, Binop):
+#         # if expr.op == "Iop_CmpEQ32":
+#         #     return Binop("Iop_CmpEQ64", [strip_trivial_unop(expr.args[0]), strip_trivial_unop(expr.args[1])])
+#         return Binop(expr.op, [strip_trivial_unop(expr.args[0]), strip_trivial_unop(expr.args[1])])
+#     elif isinstance(expr, Load):
+#         return Load(expr.end, strip_trivial_unop(expr.addr))
+#     elif isinstance(expr, ITE):
+#         # ITE(조건, iftrue, iffalse)에서 조건이 항상 True/False면 단순화
+#         cond = strip_trivial_unop(expr.cond)
+#         iftrue = strip_trivial_unop(expr.iftrue)
+#         iffalse = strip_trivial_unop(expr.iffalse)
+#         if isinstance(cond, Const):
+#             try:
+#                 val = int(cond.con)
+#                 if val:
+#                     return iftrue
+#                 else:
+#                     return iffalse
+#             except Exception:
+#                 pass
+#         return ITE(cond, iffalse, iftrue)
+#     elif isinstance(expr, (Const, RdTmp, Get)):
+#         return expr
+#     elif isinstance(expr, RegSymbol):
+#         return RegSymbol(strip_trivial_unop(expr.offset))
+#     elif isinstance(expr, MemSymbol):
+#         # MemSymbol의 주소 부분도 재귀적으로 단순화
+#         return MemSymbol(strip_trivial_unop(expr.address))
+
+#     elif isinstance(expr, list):
+#         return [strip_trivial_unop(e) for e in expr]
+
+#     else:
+#         return expr
+
+def strip_trivial_unop(expr):
+    """
+    의미 없는 타입 변환(Unop) 껍데기를 재귀적으로 벗기고 core만 반환.
+    예: Unop("Iop_32Uto64", Unop("Iop_64to32", x)) -> strip_trivial_unop(x)
+    """
+    # 의미 없는 변환 목록 (필요시 추가)
+    # print(f"strip_trivial_unop : {expr}, expr type : {type(expr)}, expr op : {getattr(expr, 'op', None)}")
+    trivial_unops = {
+        # Zero/Sign extend, truncate
+        "Iop_8Uto32", "Iop_16Uto32", "Iop_32Uto64", "Iop_8Uto64", 
+        # "Iop_1Uto64",
+        "Iop_8Sto32", "Iop_16Sto32", "Iop_32Sto64", "Iop_8Sto64", "Iop_1Sto64",
+        "Iop_64to32", "Iop_32to8", "Iop_32to16", "Iop_64to8", "Iop_64to16",
+        "Iop_8to32", "Iop_16to32", "Iop_8to64", "Iop_16to64", "Iop_32to64",
+        "Iop_64to1",
+        # Identity/bitcast
+        "Iop_Identity32", "Iop_Identity64", "Iop_Identity8", "Iop_Identity16",
+        "Iop_Bitcast32to32", "Iop_Bitcast64to64",
+        # Redundant ZeroExt/SignExt
+        "Iop_ZeroExt8to8", "Iop_ZeroExt16to16", "Iop_ZeroExt32to32", "Iop_ZeroExt64to64",
+        "Iop_SignExt8to8", "Iop_SignExt16to16", "Iop_SignExt32to32", "Iop_SignExt64to64",
+        # Redundant Extract/Concat
+        "Iop_Extract8", "Iop_Extract16", "Iop_Extract32", "Iop_Extract64",
+        "Iop_Concat8", "Iop_Concat16", "Iop_Concat32", "Iop_Concat64",
+        # No-op
+        "Iop_Copy", "Iop_Move",
+        # 기타
+        "Iop_1Uto8", "Iop_1Uto16", "Iop_1Uto32",
+        "Iop_8Uto8", "Iop_16Uto16", "Iop_32Uto32", "Iop_64Uto64",
+    }
+    print(f"strip_trivial_unop: expr: {expr}, type: {type(expr)}, op: {getattr(expr, 'op', None)}")
+    # Unop이면서 의미 없는 변환이면 재귀적으로 벗김
+    while isinstance(expr, Unop) and expr.op in trivial_unops:
+        print(f"strip_trivial_unop: stripping {expr.op} from {expr}")
+        expr = expr.args[0]
+        print(f"strip_trivial_unop: stripped to {expr}, type: {type(expr)}, op: {getattr(expr, 'op', None)}")
+    # 내부도 재귀적으로 처리
+    if isinstance(expr, Unop):
+        return Unop(expr.op, [strip_trivial_unop(expr.args[0])])
+    elif isinstance(expr, Binop):
+        return Binop(expr.op, [strip_trivial_unop(expr.args[0]), strip_trivial_unop(expr.args[1])])
+    elif isinstance(expr, Load):
+        return Load(expr.end, strip_trivial_unop(expr.addr))
+    elif isinstance(expr, ITE):
+        # ITE(조건, iftrue, iffalse)에서 조건이 항상 True/False면 단순화
+        cond = strip_trivial_unop(expr.cond)
+        iftrue = strip_trivial_unop(expr.iftrue)
+        iffalse = strip_trivial_unop(expr.iffalse)
+        if isinstance(cond, Const):
+            try:
+                val = int(cond.con)
+                if val:
+                    return iftrue
+                else:
+                    return iffalse
+            except Exception:
+                pass
+        return ITE(cond, iffalse, iftrue)
+    elif isinstance(expr, list):
+        return [strip_trivial_unop(e) for e in expr]
+    elif isinstance(expr, Const):
+        if isinstance(expr.con, IRConst):
+            # IRConst의 경우, 단순화된 표현으로 변환
+            if isinstance(expr.con.value, int):
+                return expr
+            elif isinstance(expr.con, SymbolicValue):
+                return strip_trivial_unop(expr.con)
         else:
-            # 괄호가 전체를 감싸는 경우
-            return parse_expr(expr_str[1:-1].strip())
-    if expr_str == "True":
-        # 1 == 1을 CmpEQ64로 표현 (항상 True)
-        return Binop("Iop_CmpEQ64", [Const(1), Const(1)])
-    if expr_str == "False":
-        # 1 == 0을 CmpEQ64로 표현 (항상 False)
-        return Binop("Iop_CmpEQ64", [Const(1), Const(0)])
-    # WildCard
-    if expr_str == "WildCard":
-        return WildCardSymbol()
-    # T (AnySymbol)
-    if expr_str == "T":
-        return AnySymbol()
-    
-    # Helper: 괄호 매칭으로 내부 추출
-    def extract_inner(s, prefix):
-        assert s.startswith(prefix)
-        depth = 0
-        for i in range(len(prefix), len(s)):
-            if s[i] == '(':
-                depth += 1
-            elif s[i] == ')':
-                if depth == 0:
-                    return s[len(prefix):i]
-                depth -= 1
-        # fallback: 마지막 )까지
-        return s[len(prefix):-1]
+            return expr
+    # RdTmp와 Get은 단순화하지 않음
+    elif isinstance(expr, (RdTmp, Get)):
+        return expr
+    elif isinstance(expr, MemSymbol):
+            # MemSymbol의 주소 부분도 재귀적으로 단순화
+            ret = MemSymbol(strip_trivial_unop(expr.address))
+            print(f"strip_trivial_unop: MemSymbol address: {expr.address}, stripped to {ret.address}")
+            return ret
+    elif isinstance(expr, RegSymbol):
+        return RegSymbol(strip_trivial_unop(expr.offset))
 
-    for op_str, op_name in binops:
-        # 괄호 깊이 0에서 op_str로 split
-        depth = 0
-        split_indices = []
-        for i in range(len(expr_str) - len(op_str) + 1):
-            if expr_str[i] == '(':
-                depth += 1
-            elif expr_str[i] == ')':
-                depth -= 1
-            elif expr_str[i:i+len(op_str)] == op_str and depth == 0:
-                split_indices.append(i)
-       
-        if split_indices:
-            # 오른쪽 결합: 마지막 연산자를 기준으로 분리
-            idx = split_indices[-1]
-            left = expr_str[:idx]
-            right = expr_str[idx+len(op_str):]
-            return Binop(op_name, [parse_expr(left), parse_expr(right)])
-        
-     # FakeRet
-    if expr_str == "FakeRet":
-        return ReturnSymbol(None)
-    if expr_str.startswith("FakeRet(") and expr_str.endswith(")"): 
-        inner = extract_inner(expr_str, "FakeRet(").strip()
-        parsed = parse_expr(inner)
-        if isinstance(parsed, ReturnSymbol):
-            return parsed
-        return ReturnSymbol(parsed)
-    
-    # Mem
-    if expr_str.startswith("Mem(") and expr_str.endswith(")"):
-        inner = extract_inner(expr_str, "Mem(").strip()
-        addr = parse_expr(inner)
-        return MemSymbol(addr)
-    # SR
-    if expr_str.startswith("SR(") and expr_str.endswith(")"):
-        inner = extract_inner(expr_str, "SR(").strip()
-        # 숫자면 int, 아니면 재귀 파싱
-        try:
-            return RegSymbol(int(inner))
-        except ValueError:
-            return RegSymbol(parse_expr(inner))
-    # If
-    if expr_str.startswith("If(") and expr_str.endswith(")"):
-        # 괄호 매칭으로 내부 추출
-        inner = expr_str[3:-1]
-        args = []
-        depth = 0
-        last = 0
-        for i, ch in enumerate(inner):
-            if ch == '(':
-                depth += 1
-            elif ch == ')':
-                depth -= 1
-            elif ch == ',' and depth == 0:
-                args.append(inner[last:i].strip())
-                last = i + 1
-        args.append(inner[last:].strip())
+    else:
+        return expr
 
-        if len(args) != 3:
-            raise ValueError(f"If() must have 3 arguments: {expr_str}")
-        # if expr_str == normalize_str("If(Mem(48 + Mem(SR(72))) <= SR(88), 0, 1)"):
-        #         print(f"parse_expr: {expr_str} args[0]: {args[0]}, args[1]: {args[1]}, args[2]: {args[2]}")
-        #         exit(1)
-        ret = ITE(parse_expr(args[0]), parse_expr(args[2]), parse_expr(args[1]))
-        # print(f"parse_expr: ITE found: ITE:{ret}, InsepctInfo: {InspectInfo(Effect.Condition(ret))}")
-        return ret
-        # return ITE(parse_expr(args[0]), parse_expr(args[1]), parse_expr(args[2]))
-
-    # 단항 연산자: ~
-    if expr_str.startswith("~"):
-        rest = expr_str[1:].lstrip()
-        if rest.startswith("("):
-            # 괄호 매칭으로 ~() 전체를 추출
-            depth = 0
-            for i, ch in enumerate(rest):
-                if ch == '(':
-                    depth += 1
-                elif ch == ')':
-                    depth -= 1
-                    if depth == 0:
-                        # i는 닫는 괄호 위치
-                        inner = rest[1:i]
-                        after = rest[i+1:].strip()
-                        # ~(...) 뒤에 또 연산자가 붙을 수도 있으니, after가 있으면 재귀 파싱
-                        if after:
-                            # ~(...)뒤에 연산자가 붙는 경우: ~(...) | ... 등
-                            return parse_expr(f"~({inner}) {after}")
-                        return Unop("Iop_Not64", [parse_expr(inner)])
-            # 괄호가 안 맞으면 그냥 전체를 넘김
-            return Unop("Iop_Not64", [parse_expr(rest)])
+def simplify_all_addr_expr(expr):
+    """
+    모든 expr 내부의 Add64/Sub64에 대해 상수 누적 단순화를 재귀적으로 적용.
+    """
+    if isinstance(expr, Binop):
+        if expr.op in ("Iop_Add64", "Iop_Sub64"):
+            simplified = simplify_addr_expr(expr)
+            return Binop(simplified.op, [simplify_all_addr_expr(simplified.args[0]), simplify_all_addr_expr(simplified.args[1])])
         else:
-            return Unop("Iop_Not64", [parse_expr(rest)])
-
-    # Not( ... ) 단항 논리 부정 처리
-    if expr_str.startswith("Not(") and expr_str.endswith(")"):
-        inner = expr_str[4:-1].strip()
-        return Unop("Iop_Not64", [parse_expr(inner)])
-
-    # int
-    if expr_str.isdigit():
-        return Const(int(expr_str))
-
-    # 알파벳, 언더스코어, 점 등으로 이루어진 경우(심볼)
-    if re.match(r"^[A-Za-z_][A-Za-z0-9_\.]*$", expr_str):
-        return expr_str
-
-    # 함수형 연산자: Concat, Extract, Subpiece, ZeroExt 등
-    for func in ["Concat", "Extract", "Subpiece", "ZeroExt"]:
-        if expr_str.startswith(f"{func}(") and expr_str.endswith(")"):
-            inner = expr_str[len(func) + 1:-1]
-            args = []
-            depth = 0
-            last = 0
-            for i, ch in enumerate(inner):
-                if ch == '(':
-                    depth += 1
-                elif ch == ')':
-                    depth -= 1
-                elif ch == ',' and depth == 0:
-                    args.append(inner[last:i].strip())
-                    last = i + 1
-            args.append(inner[last:].strip())
-            # 각 함수에 맞는 pyvex 표현으로 변환
-            if func == "Concat":
-                return CCall("Iop_Concat", [parse_expr(a) for a in args])
-            elif func == "Extract":
-                return CCall("Ity_I64", "Iop_Extract64", [parse_expr(a) for a in args])
-            elif func == "Subpiece":
-                return CCall("Ity_I64", "Iop_Subpiece64", [parse_expr(a) for a in args])
-            elif func == "ZeroExt":
-                return CCall("Ity_I64", "Iop_ZeroExt64", [parse_expr(a) for a in args])
-
-    # 함수형 비교 연산자: ULE, ULT, UGT, UGE 등
-    for func, op in [
-        ("ULE", "Iop_CmpLE64U"),
-        ("ULT", "Iop_CmpLT64U"),
-        ("UGT", "Iop_CmpGT64U"),
-        ("UGE", "Iop_CmpGE64U"),
-        ("SLE", "Iop_CmpLE64S"),
-        ("SLT", "Iop_CmpLT64S"),
-        ("SGT", "Iop_CmpGT64S"),
-        ("SGE", "Iop_CmpGE64S"),
-    ]:
-        if expr_str.startswith(f"{func}(") and expr_str.endswith(")"):
-            inner = expr_str[len(func) + 1:-1]
-            args = []
-            depth = 0
-            last = 0
-            for i, ch in enumerate(inner):
-                if ch == '(':
-                    depth += 1
-                elif ch == ')':
-                    depth -= 1
-                elif ch == ',' and depth == 0:
-                    args.append(inner[last:i].strip())
-                    last = i + 1
-            args.append(inner[last:].strip())
-            if len(args) != 2:
-                raise ValueError(f"{func}() must have 2 arguments: {expr_str}")
-            return Binop(op, [parse_expr(args[0]), parse_expr(args[1])])
-
-    # 함수형 논리 연산자: Or, And, Xor 등
-    for func, op in [
-        ("Or", "Iop_Or64"),
-        ("And", "Iop_And64"),
-        ("Xor", "Iop_Xor64"),
-    ]:
-        if expr_str.startswith(f"{func}(") and expr_str.endswith(")"):
-            inner = expr_str[len(func) + 1:-1]
-            args = []
-            depth = 0
-            last = 0
-            for i, ch in enumerate(inner):
-                if ch == '(':
-                    depth += 1
-                elif ch == ')':
-                    depth -= 1
-                elif ch == ',' and depth == 0:
-                    args.append(inner[last:i].strip())
-                    last = i + 1
-            args.append(inner[last:].strip())
-            if len(args) != 2:
-                raise ValueError(f"{func}() must have 2 arguments: {expr_str}")
-            return Binop(op, [parse_expr(args[0]), parse_expr(args[1])])
-
-    raise ValueError(f"parse_expr: 파싱 실패: {expr_str}")
+            return Binop(expr.op, [simplify_all_addr_expr(expr.args[0]), simplify_all_addr_expr(expr.args[1])])
+    elif isinstance(expr, Unop):
+        return Unop(expr.op, [simplify_all_addr_expr(expr.args[0])])
+    elif isinstance(expr, Load):
+        return Load(expr.end, simplify_all_addr_expr(expr.addr))
+    elif isinstance(expr, ITE):
+        return ITE(simplify_all_addr_expr(expr.cond), simplify_all_addr_expr(expr.iftrue), simplify_all_addr_expr(expr.iffalse))
+    elif isinstance(expr, MemSymbol):
+        # 주소 부분도 재귀적으로 단순화
+        return MemSymbol(simplify_all_addr_expr(expr.address))
+    elif isinstance(expr, RegSymbol):
+        return RegSymbol(simplify_all_addr_expr(expr.offset))
+    elif isinstance(expr, list):
+        return [simplify_all_addr_expr(e) for e in expr]
+    else:
+        return expr
 
 def rebuild_effects(effect: InspectInfo) -> InspectInfo:
     """
     InspectInfo를 받아서, str 형태 그대로 최소화된 effect로 변환합니다.
     """
     if str(effect) == "None":
-        # None인 경우는 그냥 반환
         return effect
 
     original_str = str(effect).replace('\n', '').strip()
-    concat = "Concat"
-    hat = "^"
-    extract = "Extract"
-    bit_not = "~"
-    
-    if concat in original_str or hat in original_str or extract in original_str:
-        # Concat이나 ^가 있는 경우는 처리하지 않음
-        print(f"effect: {effect}, effect.ins.expr: {effect.ins.expr}")
-        exit(0)
-        return effect
     if len(original_str) > 1000:
-        # 너무 긴 문자열은 처리하지 않음
         return effect
-    try:
-        # if "Put: " in original_str:
-        if isinstance(effect.ins, Effect.Put):
-            parts = original_str.split(" = ")
-            reg_part = parts[0].replace("Put: ", "").strip()
-            expr_part = parts[1].strip()
-            reg = int(reg_part)
-            expr = parse_expr(normalize_str(expr_part))
-            ret = InspectInfo(Effect.Put(reg, expr))
-            if normalize_str(original_str) != normalize_str(str(ret)) and effect != ret:
-                logger.info(f"Rebuild failed for Put: {original_str} != {str(ret)}")
-                logger.info(f"effect.ins.expr: {effect.ins.expr}")
-                logger.info(f"ret.ins.expr: {ret.ins.expr}")
-                logger.info(f"effect == ret: {effect == ret}")
-                logger.info("=" * 50)
-                # exit(1)
-                return effect
-            return ret
-        # elif "Call: " in original_str:
-        elif isinstance(effect.ins, Effect.Call):
-            m = re.match(r"Call: ([^(]+)\((.*)\)", original_str)
-            if not m:
-                raise ValueError(f"Cannot parse Call: {original_str}")
-            name = m.group(1).strip()
-            args_str = m.group(2).strip()
-            args = []
-            current = ""
-            depth = 0
-            for ch in args_str:
-                if ch == "," and depth == 0:
-                    if current.strip():
-                        args.append(current.strip())
-                    current = ""
-                else:
-                    if ch == "(":
-                        depth += 1
-                    elif ch == ")":
-                        depth -= 1
-                    current += ch
-            if current.strip():
-                args.append(current.strip())
-            args = [parse_expr(normalize_str(a)) for a in args]
-            ret = InspectInfo(Effect.Call(name, args))
-            if normalize_str(original_str) != normalize_str(str(ret)) and effect != ret:
-                logger.info(f"Rebuild failed for Call: {original_str} != {str(ret)}")
-                logger.info(f"effect.ins.expr: {effect.ins.args}")
-                logger.info(f"ret.ins.expr: {ret.ins.args}")
-                logger.info(f"effect == ret: {effect == ret}")
-                logger.info("=" * 50)
-                # exit(1)
-                return effect
-            return ret
-        # elif "Condition: " in original_str:
-        elif isinstance(effect.ins, Effect.Condition):
-            expr_part = original_str.replace("Condition: ", "").strip()
-            
-            
-            expr = parse_expr(normalize_str(expr_part))
-            ret = InspectInfo(Effect.Condition(expr))
-            if normalize_str(original_str) != normalize_str(str(ret)) and effect != ret:
-                logger.info(f"Rebuild failed for Condition: {original_str} != {str(ret)}")
-                # if original_str != "Condition: If(1 == Mem(18446744073709551549 + SR(48)), 0, 1)":
-                logger.info(f"effect.ins.expr: {effect.ins.expr}")
-                logger.info(f"ret.ins.expr: {ret.ins.expr}")
-                logger.info(f"effect == ret: {effect == ret}")
-                logger.info("=" * 50)
-                # exit(1)
-                return effect
-            return ret
-        # elif "Return: " in original_str:
-        elif isinstance(effect.ins, Effect.Return):
-            expr_part = original_str.replace("Return: ", "").strip()
-            expr = parse_expr(normalize_str(expr_part))
-            ret = InspectInfo(Effect.Return(expr))
-            if normalize_str(original_str) != normalize_str(str(ret)) and effect != ret:
-                print(f"Rebuild failed for Return: {original_str} != {str(ret)}")
-                logger.info(f"effect.ins.expr: {effect.ins.expr}")
-                logger.info(f"ret.ins.expr: {ret.ins.expr}")
-                logger.info(f"effect == ret: {effect == ret}")
-                logger.info("=" * 50)
-                # exit(1)
-                return effect
-            return ret
-        # elif "Store: " in original_str:
-        elif isinstance(effect.ins, Effect.Store):
-            parts = original_str.split(" = ")
-            addr_part = parts[0].replace("Store: ", "").strip()
-            expr_part = parts[-1].strip()
-            addr = parse_expr(normalize_str(addr_part))
-            expr = parse_expr(normalize_str(expr_part))
-            ret = InspectInfo(Effect.Store(addr, expr))
-            if normalize_str(original_str) != normalize_str(str(ret)) and effect != ret:
-                print(f"Rebuild failed for Store: {original_str} != {str(ret)}")
-                print(f"effect.ins.expr: {effect.ins.expr}")
-                print(f"ret.ins.expr: {ret.ins.expr}")
-                print(f"effect == ret: {effect == ret}")
-                logger.info("=" * 50)
-                # exit(1)
-                return effect
-            return ret
-        else:
-            print(f"Unknown effect format: {original_str}")
+
+    if isinstance(effect.ins, Effect.Put):
+        sim_expr = strip_trivial_unop(effect.ins.expr)
+        cal_expr = simplify_arith_cmp(sim_expr)
+        cal_expr = simplify_all_addr_expr(cal_expr)
+        ret = InspectInfo(Effect.Put(effect.ins.reg, cal_expr))
+        if normalize_str(original_str) != normalize_str(str(ret)) and effect != ret:
+            logger.info(f"Rebuild failed for Put: {normalize_str(original_str)} != {normalize_str(str(ret))}")
+            logger.info(f"effect.ins.expr: {effect.ins.expr}")
+            logger.info(f"ret.ins.expr: {ret.ins.expr}")
+            logger.info(f"effect == ret: {effect == ret}")
+            logger.info("=" * 50)
             exit(1)
-    except Exception as e:
-        print(f"rebuild_effects: 파싱 실패: {effect}, original_str: {normalize_str(original_str)}, error: {e}, len(normalize_str(original_str)): {len(normalize_str(original_str))}")
+            return effect
+        return ret
+    elif isinstance(effect.ins, Effect.Call):
+        name = effect.ins.name
+        args = []
+        for arg in effect.ins.args:
+            sim_arg = strip_trivial_unop(arg)
+            cal_arg = simplify_arith_cmp(sim_arg)
+            cal_arg = simplify_all_addr_expr(cal_arg)
+            args.append(cal_arg)
+        ret = InspectInfo(Effect.Call(name, args))
+        if normalize_str(original_str) != normalize_str(str(ret)) and effect != ret:
+            logger.info(f"Rebuild failed for Call: {normalize_str(original_str)} != {normalize_str(str(ret))}")
+            logger.info(f"effect.ins.expr: {effect.ins.args}")
+            logger.info(f"ret.ins.expr: {ret.ins.args}")
+            logger.info(f"effect == ret: {effect == ret}")
+            logger.info("=" * 50)
+            exit(1)
+        return ret
+    elif isinstance(effect.ins, Effect.Condition):
+        sim_expr = strip_trivial_unop(effect.ins.expr)
+        cal_expr = simplify_arith_cmp(sim_expr)
+        cal_expr = simplify_all_addr_expr(cal_expr)
+        ret = InspectInfo(Effect.Condition(cal_expr))
+        print(f"rebuild_effects: ret: {ret}, original_str: {original_str}")
+        print(f"rebuild_effects: ret.ins.expr: {ret.ins.expr}, effect.ins.expr: {effect.ins.expr}")
+        if str(ret) == "Condition: If(Mem(5 + SR(64)) == 0, 0, 1)":
+            print(f"type({ret.ins.expr.args[0].args[1]}): {type(ret.ins.expr.args[0].args[1])}")
+            print(f"type({ret.ins.expr.args[0].args[1].con.value}): {type(ret.ins.expr.args[0].args[1].con.value)}")
+            exit(0)
+        if normalize_str(original_str) != normalize_str(str(ret)) and effect != ret:
+            logger.info(f"Rebuild failed for Condition: {normalize_str(original_str)} != {normalize_str(str(ret))}")
+            logger.info(f"effect.ins.expr: {effect.ins.expr}")
+            logger.info(f"ret.ins.expr: {ret.ins.expr}")
+            logger.info(f"effect == ret: {effect == ret}")
+            logger.info("=" * 50)
+            exit(1)
+        return ret
+    elif isinstance(effect.ins, Effect.Return):
+        sim_expr = strip_trivial_unop(effect.ins.expr)
+        cal_expr = simplify_arith_cmp(sim_expr)
+        cal_expr = simplify_all_addr_expr(cal_expr)
+        ret = InspectInfo(Effect.Return(cal_expr))
+        if normalize_str(original_str) != normalize_str(str(ret)) and effect != ret:
+            print(f"Rebuild failed for Return: {normalize_str(original_str)} != {normalize_str(str(ret))}")
+            logger.info(f"effect.ins.expr: {effect.ins.expr}")
+            logger.info(f"ret.ins.expr: {ret.ins.expr}")
+            logger.info(f"effect == ret: {effect == ret}")
+            logger.info("=" * 50)
+            exit(1)
+        return ret
+    elif isinstance(effect.ins, Effect.Store):
+        addr = strip_trivial_unop(effect.ins.addr)
+        addr = simplify_addr_expr(addr)
+        addr = simplify_all_addr_expr(addr)
+        expr = strip_trivial_unop(effect.ins.expr)
+        expr = simplify_arith_cmp(expr)
+        expr = simplify_all_addr_expr(expr)
+        ret = InspectInfo(Effect.Store(addr, expr))
+        if normalize_str(original_str) != normalize_str(str(ret)) and effect != ret:
+            print(f"Rebuild failed for Store: {normalize_str(original_str)} != {normalize_str(str(ret))}")
+            print(f"effect.ins.expr: {effect.ins.expr}")
+            print(f"ret.ins.expr: {ret.ins.expr}")
+            print(f"effect == ret: {effect == ret}")
+            logger.info("=" * 50)
+            exit(1)
+        return ret
+    else:
+        print(f"Unknown effect format: {original_str}")
+        exit(1)
+    # except Exception as e:
+    #     print(f"rebuild_effects: 파싱 실패: {effect}, original_str: {normalize_str(original_str)}, error: {e}, len(normalize_str(original_str)): {len(normalize_str(original_str))}")
 
 def simplify_addr_expr(expr):
     """
     연속된 Sub64/Add64의 상수 부분을 모두 누적해서 단순화.
-    예: Sub64(Sub64(Sub64(SR(48), 8) + 8) + 8) → Sub64(SR(48), 8*n)
+    예: Add64(Add64(SR(64), 3), 1) → Add64(SR(64), 4)
+        Sub64(Sub64(SR(48), 8), 8) → Sub64(SR(48), 16)
     """
     base = expr
     total = 0
-    sign = 1
     while isinstance(base, Binop):
         if base.op == "Iop_Sub64":
             left, right = base.args
-            # 오른쪽이 상수면 누적
             if isinstance(right, (Const, int)):
                 val = right.con if isinstance(right, Const) else right
-                # pyvex U64/U32 등은 .value, 아니면 int 변환
                 if hasattr(val, "value"):
                     val = val.value
                 val = int(val)
-                total += sign * val
+                total -= val
                 base = left
-                sign = 1
             else:
                 break
         elif base.op == "Iop_Add64":
@@ -613,7 +510,7 @@ def simplify_addr_expr(expr):
                 if hasattr(val, "value"):
                     val = val.value
                 val = int(val)
-                total += sign * val
+                total += val
                 base = left
             else:
                 break
@@ -622,8 +519,10 @@ def simplify_addr_expr(expr):
     # base가 더 이상 Binop이 아니면, 누적된 상수와 함께 재구성
     if total == 0:
         return base
+    elif total > 0:
+        return Binop("Iop_Add64", [base, Const(total)])
     else:
-        return Binop("Iop_Sub64", [base, Const(total)])
+        return Binop("Iop_Sub64", [base, Const(-total)])
 
 def simplify_effects(effects: list[InspectInfo]) -> list[InspectInfo]:
     for effect in effects:
@@ -898,3 +797,54 @@ def node_to_effect(node: Node, fallback_effect: Effect = None) -> Effect:
 def normalize_str(s: str) -> str:
     # 모든 공백 문자(\n, \r, \t, 스페이스 등)를 제거
     return "".join(s.split())
+
+def simplify_arith_cmp(expr):
+    """
+    산술 비교식에서 (x - c) == k → x == (k + c)
+    (x + c) == k → x == (k - c)
+    등으로 단순화.
+    """
+    def get_int(val):
+        if hasattr(val, "value"):
+            return int(val.value)
+        return int(val)
+
+    if isinstance(expr, Binop) and expr.op.startswith("Iop_CmpEQ"):
+        left, right = expr.args
+        # (Sub8(x, c), k) → (x, k + c)
+        if isinstance(left, Binop) and left.op.startswith("Iop_Sub"):
+            x, c = left.args
+            if isinstance(c, Const) and isinstance(right, Const):
+                new_val = get_int(right.con) + get_int(c.con)
+                return Binop(expr.op, [x, Const(new_val)])
+        # (Add8(x, c), k) → (x, k - c)
+        if isinstance(left, Binop) and left.op.startswith("Iop_Add"):
+            x, c = left.args
+            if isinstance(c, Const) and isinstance(right, Const):
+                new_val = get_int(right.con) - get_int(c.con)
+                return Binop(expr.op, [x, Const(new_val)])
+        # (x, Sub8(k, c)) → (x, k - c)
+        if isinstance(right, Binop) and right.op.startswith("Iop_Sub"):
+            k, c = right.args
+            if isinstance(k, Const) and isinstance(c, Const):
+                new_val = get_int(k.con) - get_int(c.con)
+                return Binop(expr.op, [left, Const(new_val)])
+        # (x, Add8(k, c)) → (x, k + c)
+        if isinstance(right, Binop) and right.op.startswith("Iop_Add"):
+            k, c = right.args
+            if isinstance(k, Const) and isinstance(c, Const):
+                new_val = get_int(k.con) + get_int(c.con)
+                return Binop(expr.op, [left, Const(new_val)])
+    # 재귀적으로 내부도 처리
+    if isinstance(expr, Binop):
+        return Binop(expr.op, [simplify_arith_cmp(expr.args[0]), simplify_arith_cmp(expr.args[1])])
+    elif isinstance(expr, Unop):
+        return Unop(expr.op, [simplify_arith_cmp(expr.args[0])])
+    elif isinstance(expr, Load):
+        return Load(expr.end, simplify_arith_cmp(expr.addr))
+    elif isinstance(expr, ITE):
+        return ITE(simplify_arith_cmp(expr.cond), simplify_arith_cmp(expr.iftrue), simplify_arith_cmp(expr.iffalse))
+    elif isinstance(expr, list):
+        return [simplify_arith_cmp(e) for e in expr]
+    else:
+        return expr

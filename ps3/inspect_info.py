@@ -5,6 +5,7 @@ from effect import Effect
 class InspectInfo:
     def __init__(self, ins:Effect) -> None:
         self.ins = ins
+        self._hash = self._compute_hash()
 
     # def __str__(self) -> str:
     #     if isinstance(self.ins, tuple):
@@ -33,23 +34,37 @@ class InspectInfo:
     def __repr__(self) -> str:
         return str(self)
 
-    # def __hash__(self) -> int:
-    #     return hash(self.ins[0])
+    def __hash__(self) -> int:
+        return self._hash
     
-    def __hash__(self):
+    # def __hash__(self):
+    #     # 내부 expr의 논리적 값 기반으로 hash 생성
+    #     if isinstance(self.ins, Effect.Call):
+    #         return hash((self.ins.name, tuple(map(str, self.ins.args))))
+    #     elif isinstance(self.ins, Effect.Condition):
+    #         return hash(("Condition", str(self.ins.expr)))
+    #     elif isinstance(self.ins, Effect.Return):
+    #         return hash(("Return", str(self.ins.expr)))
+    #     elif isinstance(self.ins, Effect.Put):
+    #         return hash(("Put", self.ins.reg, str(self.ins.expr)))
+    #     elif isinstance(self.ins, Effect.Store):
+    #         return hash(("Store", str(self.ins.addr), str(self.ins.expr)))
+    #     else:
+    #         return hash(str(self))
+    def _compute_hash(self):
         # 내부 expr의 논리적 값 기반으로 hash 생성
         if isinstance(self.ins, Effect.Call):
-            return hash((self.ins.name, tuple(map(str, self.ins.args))))
+            return hash((self.ins.name, tuple(map(lambda x: str(simplify.simplify(x)), self.ins.args))))
         elif isinstance(self.ins, Effect.Condition):
-            return hash(("Condition", str(self.ins.expr)))
+            return hash(("Condition", str(simplify.simplify(self.ins.expr))))
         elif isinstance(self.ins, Effect.Return):
-            return hash(("Return", str(self.ins.expr)))
+            return hash(("Return", str(simplify.simplify(self.ins.expr))))
         elif isinstance(self.ins, Effect.Put):
-            return hash(("Put", self.ins.reg, str(self.ins.expr)))
+            return hash(("Put", self.ins.reg, str(simplify.simplify(self.ins.expr))))
         elif isinstance(self.ins, Effect.Store):
-            return hash(("Store", str(self.ins.addr), str(self.ins.expr)))
+            return hash(("Store", str(simplify.simplify(self.ins.addr)), str(simplify.simplify(self.ins.expr))))
         else:
-            return hash(str(self))
+            return hash(str(simplify.simplify(self.ins)))
 
     # def __eq__(self, __o: object) -> bool:
     #     if isinstance(__o, InspectInfo):

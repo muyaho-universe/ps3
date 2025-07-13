@@ -94,7 +94,6 @@ def refine_one(myself: list[InspectInfo], other: list[InspectInfo]) -> list[Insp
             new_effect = generalized_tree   
             new_info = InspectInfo(new_effect)
             # temp.append(new_info)
-            print(f"RALO: new_info: {new_info}, type(new_info): {type(new_info)}, type(other): {type(other)}")
             if go and new_info not in other :
                 print(f"refine_one: {new_info} not in other, {new_info in other}, type(other){type(other)}, type(new_info): {type(new_info)}")
                 for a in other:
@@ -119,6 +118,13 @@ def generalize_node(node: Node) -> Node:
                 return Node("Const: T", level=node.level)
         except Exception:
             pass
+    if node.label.startswith("IRConst: "):
+        try:
+            val = int(node.label[len("IRConst: "):])
+            if val >= 1000000:
+                return Node("Const: T", level=node.level)
+        except Exception:
+            pass
     # 자식 노드들 재귀적으로 처리
     # if node.label.startswith("IRConst: "):
     new_children = [generalize_node(child) for child in node.children]
@@ -130,7 +136,9 @@ def single_refine_one(info: InspectInfo) -> InspectInfo:
     """
     effect = deepcopy(info.ins)
     root = effect_to_node(info.ins)
+    # root.print()
     new_tree = generalize_node(root)
+    # new_tree.print()    
     try:
         new_effect = node_to_effect(new_tree, fallback_effect=effect)
     except Exception as e:
@@ -162,8 +170,13 @@ def single_refine(myself: dict[(InspectInfo, bool):list[InspectInfo]]) -> dict[(
             assert new_info == info, f"Rebuild failed for info {new_info}\n!=\n {info}"
             # if isinstance(new_info.ins, (Effect.Call, Effect.Condition)):
                 # Call 또는 Condition인 경우, 그 안의 expr를 T로 바꿈
+            # print(f"new_info: {new_info}")
             new_info = single_refine_one(new_info)
+            # print(f"after single_refine_one: {new_info}")
+            # if isinstance(new_info.ins, (Effect.Put, Effect.Store)):
+            #     print(f"new_info.ins.expr: {new_info.ins.expr}")
             my_effects[key].append(new_info)
+    # exit(0)
     return my_effects
 
 
@@ -208,83 +221,12 @@ def refine_sig(vuln_effect: list[InspectInfo], patch_effect: list[InspectInfo]) 
     return vuln_effect, patch_effect 
 
 
-# def strip_trivial_unop(expr):
-#     """
-#     의미 없는 타입 변환(Unop) 껍데기를 재귀적으로 벗기고 core만 반환.
-#     예: Unop("Iop_32Uto64", Unop("Iop_64to32", x)) -> strip_trivial_unop(x)
-#     """
-#     # 의미 없는 변환 목록 (필요시 추가)
-#     trivial_unops = {
-#         # Zero/Sign extend, truncate
-#         "Iop_8Uto32", "Iop_16Uto32", "Iop_32Uto64", "Iop_8Uto64", 
-#         # "Iop_1Uto64",
-#         "Iop_8Sto32", "Iop_16Sto32", "Iop_32Sto64", "Iop_8Sto64", "Iop_1Sto64",
-#         "Iop_64to32", "Iop_32to8", "Iop_32to16", "Iop_64to8", "Iop_64to16",
-#         "Iop_8to32", "Iop_16to32", "Iop_8to64", "Iop_16to64", "Iop_32to64",
-#         "Iop_64to1",
-#         # Identity/bitcast
-#         "Iop_Identity32", "Iop_Identity64", "Iop_Identity8", "Iop_Identity16",
-#         "Iop_Bitcast32to32", "Iop_Bitcast64to64",
-#         # Redundant ZeroExt/SignExt
-#         "Iop_ZeroExt8to8", "Iop_ZeroExt16to16", "Iop_ZeroExt32to32", "Iop_ZeroExt64to64",
-#         "Iop_SignExt8to8", "Iop_SignExt16to16", "Iop_SignExt32to32", "Iop_SignExt64to64",
-#         # Redundant Extract/Concat
-#         "Iop_Extract8", "Iop_Extract16", "Iop_Extract32", "Iop_Extract64",
-#         "Iop_Concat8", "Iop_Concat16", "Iop_Concat32", "Iop_Concat64",
-#         # No-op
-#         "Iop_Copy", "Iop_Move",
-#         # 기타
-#         "Iop_1Uto8", "Iop_1Uto16", "Iop_1Uto32",
-#         "Iop_8Uto8", "Iop_16Uto16", "Iop_32Uto32", "Iop_64Uto64",
-#     }
-#     # Unop이면서 의미 없는 변환이면 재귀적으로 벗김
-#     while isinstance(expr, Unop) and expr.op in trivial_unops:
-#         expr = expr.args[0]
-#     # 내부도 재귀적으로 처리
-#     if isinstance(expr, Unop):
-#         return Unop(expr.op, [strip_trivial_unop(expr.args[0])])
-#     elif isinstance(expr, Binop):
-#         # if expr.op == "Iop_CmpEQ32":
-#         #     return Binop("Iop_CmpEQ64", [strip_trivial_unop(expr.args[0]), strip_trivial_unop(expr.args[1])])
-#         return Binop(expr.op, [strip_trivial_unop(expr.args[0]), strip_trivial_unop(expr.args[1])])
-#     elif isinstance(expr, Load):
-#         return Load(expr.end, strip_trivial_unop(expr.addr))
-#     elif isinstance(expr, ITE):
-#         # ITE(조건, iftrue, iffalse)에서 조건이 항상 True/False면 단순화
-#         cond = strip_trivial_unop(expr.cond)
-#         iftrue = strip_trivial_unop(expr.iftrue)
-#         iffalse = strip_trivial_unop(expr.iffalse)
-#         if isinstance(cond, Const):
-#             try:
-#                 val = int(cond.con)
-#                 if val:
-#                     return iftrue
-#                 else:
-#                     return iffalse
-#             except Exception:
-#                 pass
-#         return ITE(cond, iffalse, iftrue)
-#     elif isinstance(expr, (Const, RdTmp, Get)):
-#         return expr
-#     elif isinstance(expr, RegSymbol):
-#         return RegSymbol(strip_trivial_unop(expr.offset))
-#     elif isinstance(expr, MemSymbol):
-#         # MemSymbol의 주소 부분도 재귀적으로 단순화
-#         return MemSymbol(strip_trivial_unop(expr.address))
-
-#     elif isinstance(expr, list):
-#         return [strip_trivial_unop(e) for e in expr]
-
-#     else:
-#         return expr
-
 def strip_trivial_unop(expr):
     """
     의미 없는 타입 변환(Unop) 껍데기를 재귀적으로 벗기고 core만 반환.
     예: Unop("Iop_32Uto64", Unop("Iop_64to32", x)) -> strip_trivial_unop(x)
     """
     # 의미 없는 변환 목록 (필요시 추가)
-    # print(f"strip_trivial_unop : {expr}, expr type : {type(expr)}, expr op : {getattr(expr, 'op', None)}")
     trivial_unops = {
         # Zero/Sign extend, truncate
         "Iop_8Uto32", "Iop_16Uto32", "Iop_32Uto64", "Iop_8Uto64", 
@@ -308,7 +250,6 @@ def strip_trivial_unop(expr):
         "Iop_1Uto8", "Iop_1Uto16", "Iop_1Uto32",
         "Iop_8Uto8", "Iop_16Uto16", "Iop_32Uto32", "Iop_64Uto64",
     }
-    print(f"strip_trivial_unop: expr: {expr}, type: {type(expr)}, op: {getattr(expr, 'op', None)}")
     # Unop이면서 의미 없는 변환이면 재귀적으로 벗김
     while isinstance(expr, Unop) and expr.op in trivial_unops:
         expr = expr.args[0]
@@ -316,6 +257,8 @@ def strip_trivial_unop(expr):
     if isinstance(expr, Unop):
         return Unop(expr.op, [strip_trivial_unop(expr.args[0])])
     elif isinstance(expr, Binop):
+        # if expr.op == "Iop_Sub8":
+        #     return Binop("Iop_Sub64", [strip_trivial_unop(expr.args[0]), strip_trivial_unop(expr.args[1])])
         return Binop(expr.op, [strip_trivial_unop(expr.args[0]), strip_trivial_unop(expr.args[1])])
     elif isinstance(expr, Load):
         return Load(expr.end, strip_trivial_unop(expr.addr))
@@ -365,7 +308,11 @@ def simplify_all_addr_expr(expr):
     if isinstance(expr, Binop):
         if expr.op in ("Iop_Add64", "Iop_Sub64"):
             simplified = simplify_addr_expr(expr)
-            return Binop(simplified.op, [simplify_all_addr_expr(simplified.args[0]), simplify_all_addr_expr(simplified.args[1])])
+            # simplified가 Binop이면 재귀적으로, 아니면 그대로 반환
+            if isinstance(simplified, Binop):
+                return Binop(simplified.op, [simplify_all_addr_expr(simplified.args[0]), simplify_all_addr_expr(simplified.args[1])])
+            else:
+                return simplify_all_addr_expr(simplified)
         else:
             return Binop(expr.op, [simplify_all_addr_expr(expr.args[0]), simplify_all_addr_expr(expr.args[1])])
     elif isinstance(expr, Unop):
@@ -373,9 +320,8 @@ def simplify_all_addr_expr(expr):
     elif isinstance(expr, Load):
         return Load(expr.end, simplify_all_addr_expr(expr.addr))
     elif isinstance(expr, ITE):
-        return ITE(simplify_all_addr_expr(expr.cond), simplify_all_addr_expr(expr.iftrue), simplify_all_addr_expr(expr.iffalse))
+        return ITE(simplify_all_addr_expr(expr.cond), simplify_all_addr_expr(expr.iffalse), simplify_all_addr_expr(expr.iftrue))
     elif isinstance(expr, MemSymbol):
-        # 주소 부분도 재귀적으로 단순화
         return MemSymbol(simplify_all_addr_expr(expr.address))
     elif isinstance(expr, RegSymbol):
         return RegSymbol(simplify_all_addr_expr(expr.offset))
@@ -793,6 +739,8 @@ def simplify_arith_cmp(expr):
     """
     산술 비교식에서 (x - c) == k → x == (k + c)
     (x + c) == k → x == (k - c)
+    (x * c) == k → x == (k // c) (단, c ≠ 0, k % c == 0)
+    (x // c) == k → x == (k * c)
     등으로 단순화.
     """
     def get_int(val):
@@ -802,30 +750,64 @@ def simplify_arith_cmp(expr):
 
     if isinstance(expr, Binop) and expr.op.startswith("Iop_CmpEQ"):
         left, right = expr.args
-        # (Sub8(x, c), k) → (x, k + c)
+        # (Sub(x, c), k) → (x, k + c)
         if isinstance(left, Binop) and left.op.startswith("Iop_Sub"):
             x, c = left.args
             if isinstance(c, Const) and isinstance(right, Const):
                 new_val = get_int(right.con) + get_int(c.con)
                 return Binop(expr.op, [x, Const(new_val)])
-        # (Add8(x, c), k) → (x, k - c)
+        # (Add(x, c), k) → (x, k - c)
         if isinstance(left, Binop) and left.op.startswith("Iop_Add"):
             x, c = left.args
             if isinstance(c, Const) and isinstance(right, Const):
                 new_val = get_int(right.con) - get_int(c.con)
                 return Binop(expr.op, [x, Const(new_val)])
-        # (x, Sub8(k, c)) → (x, k - c)
+        # (Mul(x, c), k) → (x, k // c) (단, c ≠ 0, k % c == 0)
+        if isinstance(left, Binop) and left.op.startswith("Iop_Mul"):
+            x, c = left.args
+            if isinstance(c, Const) and isinstance(right, Const):
+                c_val = get_int(c.con)
+                k_val = get_int(right.con)
+                if c_val != 0 and k_val % c_val == 0:
+                    new_val = k_val // c_val
+                    return Binop(expr.op, [x, Const(new_val)])
+        # (Div(x, c), k) → (x, k * c) (단, c ≠ 0)
+        if isinstance(left, Binop) and (left.op.startswith("Iop_Div") or left.op.startswith("Iop_DivU")):
+            x, c = left.args
+            if isinstance(c, Const) and isinstance(right, Const):
+                c_val = get_int(c.con)
+                k_val = get_int(right.con)
+                if c_val != 0:
+                    new_val = k_val * c_val
+                    return Binop(expr.op, [x, Const(new_val)])
+        # (x, Sub(k, c)) → (x, k - c)
         if isinstance(right, Binop) and right.op.startswith("Iop_Sub"):
             k, c = right.args
             if isinstance(k, Const) and isinstance(c, Const):
                 new_val = get_int(k.con) - get_int(c.con)
                 return Binop(expr.op, [left, Const(new_val)])
-        # (x, Add8(k, c)) → (x, k + c)
+        # (x, Add(k, c)) → (x, k + c)
         if isinstance(right, Binop) and right.op.startswith("Iop_Add"):
             k, c = right.args
             if isinstance(k, Const) and isinstance(c, Const):
                 new_val = get_int(k.con) + get_int(c.con)
                 return Binop(expr.op, [left, Const(new_val)])
+        # (x, Mul(k, c)) → (x, k * c)
+        if isinstance(right, Binop) and right.op.startswith("Iop_Mul"):
+            k, c = right.args
+            if isinstance(k, Const) and isinstance(c, Const):
+                new_val = get_int(k.con) * get_int(c.con)
+                return Binop(expr.op, [left, Const(new_val)])
+        # (x, Div(k, c)) → (x, k // c) (단, c ≠ 0)
+        if isinstance(right, Binop) and (right.op.startswith("Iop_Div") or right.op.startswith("Iop_DivU")):
+            k, c = right.args
+            if isinstance(k, Const) and isinstance(c, Const):
+                c_val = get_int(c.con)
+                k_val = get_int(k.con)
+                if c_val != 0:
+                    new_val = k_val // c_val
+                    return Binop(expr.op, [left, Const(new_val)])
+
     # 재귀적으로 내부도 처리
     if isinstance(expr, Binop):
         return Binop(expr.op, [simplify_arith_cmp(expr.args[0]), simplify_arith_cmp(expr.args[1])])
@@ -834,7 +816,7 @@ def simplify_arith_cmp(expr):
     elif isinstance(expr, Load):
         return Load(expr.end, simplify_arith_cmp(expr.addr))
     elif isinstance(expr, ITE):
-        return ITE(simplify_arith_cmp(expr.cond), simplify_arith_cmp(expr.iftrue), simplify_arith_cmp(expr.iffalse))
+        return ITE(simplify_arith_cmp(expr.cond), simplify_arith_cmp(expr.iffalse), simplify_arith_cmp(expr.iftrue))
     elif isinstance(expr, list):
         return [simplify_arith_cmp(e) for e in expr]
     else:

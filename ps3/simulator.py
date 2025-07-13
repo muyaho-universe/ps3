@@ -1408,8 +1408,6 @@ class Test:
                             #     test = True
                             #     result.append("vuln")
                             #     break
-            
-            exit(0)
             # essential a vuln patch
             if len(patch_effect) == 0:
                 

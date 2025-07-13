@@ -311,9 +311,7 @@ def strip_trivial_unop(expr):
     print(f"strip_trivial_unop: expr: {expr}, type: {type(expr)}, op: {getattr(expr, 'op', None)}")
     # Unop이면서 의미 없는 변환이면 재귀적으로 벗김
     while isinstance(expr, Unop) and expr.op in trivial_unops:
-        print(f"strip_trivial_unop: stripping {expr.op} from {expr}")
         expr = expr.args[0]
-        print(f"strip_trivial_unop: stripped to {expr}, type: {type(expr)}, op: {getattr(expr, 'op', None)}")
     # 내부도 재귀적으로 처리
     if isinstance(expr, Unop):
         return Unop(expr.op, [strip_trivial_unop(expr.args[0])])
@@ -353,7 +351,6 @@ def strip_trivial_unop(expr):
     elif isinstance(expr, MemSymbol):
             # MemSymbol의 주소 부분도 재귀적으로 단순화
             ret = MemSymbol(strip_trivial_unop(expr.address))
-            print(f"strip_trivial_unop: MemSymbol address: {expr.address}, stripped to {ret.address}")
             return ret
     elif isinstance(expr, RegSymbol):
         return RegSymbol(strip_trivial_unop(expr.offset))
@@ -434,12 +431,6 @@ def rebuild_effects(effect: InspectInfo) -> InspectInfo:
         cal_expr = simplify_arith_cmp(sim_expr)
         cal_expr = simplify_all_addr_expr(cal_expr)
         ret = InspectInfo(Effect.Condition(cal_expr))
-        print(f"rebuild_effects: ret: {ret}, original_str: {original_str}")
-        print(f"rebuild_effects: ret.ins.expr: {ret.ins.expr}, effect.ins.expr: {effect.ins.expr}")
-        if str(ret) == "Condition: If(Mem(5 + SR(64)) == 0, 0, 1)":
-            print(f"type({ret.ins.expr.args[0].args[1]}): {type(ret.ins.expr.args[0].args[1])}")
-            print(f"type({ret.ins.expr.args[0].args[1].con.value}): {type(ret.ins.expr.args[0].args[1].con.value)}")
-            exit(0)
         if normalize_str(original_str) != normalize_str(str(ret)) and effect != ret:
             logger.info(f"Rebuild failed for Condition: {normalize_str(original_str)} != {normalize_str(str(ret))}")
             logger.info(f"effect.ins.expr: {effect.ins.expr}")

@@ -138,7 +138,7 @@ def single_refine_one(info: InspectInfo) -> InspectInfo:
     root = effect_to_node(info.ins)
     # root.print()
     new_tree = generalize_node(root)
-    # new_tree.print()    
+    # new_tree.print() 
     try:
         new_effect = node_to_effect(new_tree, fallback_effect=effect)
     except Exception as e:

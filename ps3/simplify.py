@@ -54,16 +54,6 @@ def is_generalization_of(g, c, depth=0):
     if isinstance(c, AnySymbol):
         # print(f"{tab}{c} is AnySymbol (concrete side) – no match")
         return False
-    # # Unop
-    # if isinstance(g, Unop) and isinstance(g.args[0], AnySymbol):
-    #     return True
-    # if isinstance(c, Unop) and isinstance(c.args[0], AnySymbol):
-    #     return False
-    # # Binop
-    # if isinstance(g, Binop) and (isinstance(g.args[0], AnySymbol) or isinstance(g.args[1], AnySymbol)):
-    #     return True
-    # if isinstance(c, Binop) and (isinstance(c.args[0], AnySymbol) or isinstance(c.args[1], AnySymbol)):
-    #     return False
     # 1) 타입 불일치
     if type(g) is not type(c):
         # print(f"{tab}Type mismatch {type(g).__name__} vs {type(c).__name__}")
@@ -200,7 +190,6 @@ def effect_generalization(g, c):
     # print(f"Unhandled Effect type: {type(g).__name__}")
     return False
 
-
 def per_related(e1, e2) -> bool:
     """
     Partial Equivalence Relation check:
@@ -209,40 +198,12 @@ def per_related(e1, e2) -> bool:
     return (effect_generalization(e1, e2) or
             effect_generalization(e2, e1))
 
-
-
-
 def simplify(expr: pe.IRExpr):
     if isinstance(expr, int) or isinstance(expr, str) or expr == None:
         return expr
     if isinstance(expr, list):
         return [simplify(e) for e in expr]
     return simplify_z3(to_z3(expr))
-
-
-# def equal(expr1: pe.IRExpr, expr2: pe.IRExpr) -> bool:
-#     if isinstance(expr1, AnySymbol) and not hasattr(expr2, "args"):
-#         return True
-#     if isinstance(expr2, AnySymbol) and not hasattr(expr1, "args"):
-#         return True
-#     # print(f"Comparing: {simplify(expr1)} and {simplify(expr2)}")
-#     # if "T" in str(simplify(expr1)).split("*")[-1]:
-#     #     return True
-#     # # if str(simplify(expr2)) == "T":
-#     # if "T" in str(simplify(expr2)).split("*")[-1]:
-#     #     return True
-#     if isinstance(expr1, int) or isinstance(expr1, str):
-#         return expr1 == expr2
-#     if isinstance(expr1, list):
-#         if not isinstance(expr2, list):
-#             return False
-#         if len(expr1) != len(expr2):
-#             return False
-#         for i in range(len(expr1)):
-#             if not equal(expr1[i], expr2[i]):
-#                 return False
-#         return True
-#     return equal_z3(to_z3(expr1), to_z3(expr2))
 
 def effect_to_expr(effect):
     """
@@ -315,23 +276,6 @@ def equal(expr1, expr2) -> bool:
     """
     # 처음엔 effect로 시작
     if is_effect_instance(expr1) and is_effect_instance(expr2):
-        # 0. 껍데기 제거
-        # print("Comparing effects")
-        # try:
-        #     print(f"before unwrap, expr2: {expr2.expr.args[1].con}, type: {type(expr2.expr.args[1].con)}")
-
-        # except Exception as e:
-        #     pass
-        # expr1 = unwrap_const(expr1)
-        # expr2 = unwrap_const(expr2)
-        # try:
-        #     print(f"Comparing: {expr2.expr.args[1].con}, type: {type(expr2.expr.args[1].con.value)}")
-        # except Exception as e:
-        #     pass
-        # print(f"expr1 contains AnySymbol: {contains_anysymbol(expr1)}")
-        # print(f"expr2 contains AnySymbol: {contains_anysymbol(expr2)}")
-        # 1. 구조적 PER 먼저 (refine 부터 AnySymbol이 있을 수 있으므로 이때부터는 구조적 PER)
-        
         if contains_anysymbol(expr1) or contains_anysymbol(expr2):
             t = per_related(expr1, expr2)
             # print("Using per_related due to AnySymbol presence")
@@ -371,93 +315,6 @@ def equal(expr1, expr2) -> bool:
             return True
         return equal_z3(to_z3(expr1), to_z3(expr2))
 
-
-# def equal(expr1, expr2):
-#     """
-#     Rust Expr PartialEq의 동작을 반영:
-#     - AnySymbol이 한쪽에 있으면 무조건 True (와일드카드)
-#     - 리스트/구조체는 재귀적으로 비교
-#     - 값/타입이 다르면 False
-#     """
-#     expr1 = unwrap_const(expr1)
-#     expr2 = unwrap_const(expr2)
-
-#     # AnySymbol은 어떤 값과도 같다
-#     if isinstance(expr1, AnySymbol) or isinstance(expr2, AnySymbol):
-#         # partial equivalence relation 우선 확인
-#         # Effect 타입만 per_related 적용 (아니면 그냥 True)
-#         if isinstance(expr1, Effect) and isinstance(expr2, Effect):
-#             if per_related(expr1, expr2):
-#                 return True
-#         else:
-#             return True
-
-#     # 내부에 AnySymbol이 있는 pyvex expr/사용자 정의 객체도 True
-#     # (Unop, Binop, FakeRet 등)
-#     for e in (expr1, expr2):
-#         if hasattr(e, "args") and any(isinstance(arg, AnySymbol) for arg in getattr(e, "args", [])):
-#             # partial equivalence relation 우선 확인
-#             if isinstance(expr1, Effect) and isinstance(expr2, Effect):
-#                 if per_related(expr1, expr2):
-#                     return True
-#             else:
-#                 return True
-#         # FakeRet 등 사용자 정의 expr의 속성에 AnySymbol이 있으면 True
-#         if hasattr(e, "__dict__"):
-#             if any(isinstance(v, AnySymbol) for v in e.__dict__.values()):
-#                 if isinstance(expr1, Effect) and isinstance(expr2, Effect):
-#                     if per_related(expr1, expr2):
-#                         return True
-#                 else:
-#                     return True
-
-#     # 타입이 다르면 False
-#     if type(expr1) != type(expr2):
-#         return False
-
-#     # int, str은 값 비교
-#     if isinstance(expr1, (int, str)):
-#         return expr1 == expr2
-
-#     # 리스트는 길이와 각 원소 재귀 비교
-#     if isinstance(expr1, list):
-#         if not isinstance(expr2, list):
-#             return False
-#         if len(expr1) != len(expr2):
-#             return False
-#         for a, b in zip(expr1, expr2):
-#             if not equal(a, b):
-#                 return False
-#         return True
-
-#     # pyvex expr 등: op, args 비교
-#     if hasattr(expr1, "op") and hasattr(expr2, "op"):
-#         if getattr(expr1, "op", None) != getattr(expr2, "op", None):
-#             return False
-#         if hasattr(expr1, "args") and hasattr(expr2, "args"):
-#             if len(expr1.args) != len(expr2.args):
-#                 return False
-#             for a, b in zip(expr1.args, expr2.args):
-#                 if not equal(a, b):
-#                     return False
-#             return True
-#         return True
-
-#     # 사용자 정의 객체: __dict__ 비교
-#     if hasattr(expr1, "__dict__") and hasattr(expr2, "__dict__"):
-#         for k in expr1.__dict__:
-#             if k not in expr2.__dict__:
-#                 return False
-#             if not equal(expr1.__dict__[k], expr2.__dict__[k]):
-#                 return False
-#         for k in expr2.__dict__:
-#             if k not in expr1.__dict__:
-#                 return False
-#         return True
-
-#     # 마지막으로 z3로 동치성 확인
-#     return equal_z3(to_z3(expr1), to_z3(expr2))
-
 def show_equal(expr1: pe.IRExpr, expr2: pe.IRExpr) -> bool:
     if isinstance(expr1, int) or isinstance(expr1, str):
         return expr1 == expr2
@@ -484,70 +341,6 @@ def to_z3(expr):
     except Exception as e:
         print(f"Error converting {expr}:{type(expr)} : {e}")
         return z3.BitVecVal(0, 64)
-
-# def is_effect_instance(obj):
-#     """
-#     True  ⇔  obj 가 effect.py 안에 정의된 Effect.<Something> 중첩 클래스
-#     """
-#     return (obj.__class__.__module__ == "effect"         # 파일이 effect.py
-#             and obj.__class__.__qualname__.startswith("Effect."))
-
-# def to_z3(expr):
-#     """
-#     pyvex IRExpr / SymbolicValue → z3.BitVec / Bool 로 변환.
-#     AnySymbol 은 unconstrained BitVec 로, Uto64 는 ZeroExt 로 처리.
-#     """
-#     expr = unwrap_const(expr)
-
-#     # 0) Effect.*  (Put, Condition, Call, Store …)
-#     if isinstance(expr, Effect):
-#         return z3.BitVec(str(expr), 64)      # 이름만 갖는 64-bit 심볼
-    
-#     # ───────── AnySymbol ─────────
-#     if isinstance(expr, AnySymbol):
-#         return z3.BitVec(f"any_{id(expr)}", 64)
-
-#     # ───────── 심볼릭 값들 ────────
-#     if isinstance(expr, (ReturnSymbol, RegSymbol, MemSymbol)):
-#         return z3.BitVec(str(expr), 64)
-
-#     # ───────── 진짜 상수 ──────────
-#     if isinstance(expr, (pe.Const, pc.IRConst)) and not isinstance(expr, SymbolicValue):
-#         # pyvex.expr.Const      → expr.con
-#         # pyvex.const.IRConst   → expr._value
-#         raw = expr.con if hasattr(expr, "con") else expr._value
-
-#         # ⚠️ 문자열이면 BitVec 변수로 취급
-#         if isinstance(raw, int):
-#             return z3.BitVecVal(raw, 64)
-#         else:
-#             # e.g. "SR(48)" · "FakeRet(bn_get_top)"
-#             return z3.BitVec(str(raw), 64)
-        
-#     # Unary op (예: 1Uto64)
-#     if isinstance(expr, pe.Unop):
-#         inner = to_z3(expr.args[0])
-#         if expr.op.endswith("Uto64"):
-#             return z3.ZeroExt(32, inner)
-#         # 필요 시 다른 Unop 추가
-#         raise NotImplementedError(f"Unhandled Unop {expr.op}")
-
-#     # Binary op
-#     if isinstance(expr, pe.Binop):
-#         a, b = map(to_z3, expr.args)
-#         match expr.op:
-#             case "Iop_Add64" | "Add64":
-#                 return a + b
-#             case "Iop_Sub64" | "Sub64":
-#                 return a - b
-#             # 기타 연산 필요 시 추가
-#         raise NotImplementedError(f"Unhandled Binop {expr.op}")
-
-#     raise NotImplementedError(f"Unhandled expr type {type(expr)}")
-
-# def to_z3_true(expr):
-#     """z3 변환의 helper (이름만 유지)."""
-#     return to_z3(expr)
 
 def to_z3_true(expr: pe.IRExpr | pc.IRConst | int) -> z3.ExprRef:
     if isinstance(expr, AnySymbol):

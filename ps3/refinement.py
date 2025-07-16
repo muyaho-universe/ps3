@@ -433,13 +433,6 @@ def binop_simplifier(expr: IRExpr | pc.IRConst | int):
         match expr.op:
             case "Iop_Add8":
                 if isinstance(expr.args[1], Const):
-                    # if isinstance(expr.args[1].con, int):
-                    #     val = int(expr.args[1].con) 
-                    # elif isinstance(expr.args[1].con, pc.U8):
-                    #     val = int(expr.args[1].con.value)
-                    # elif isinstance(expr.args[1].con, Const):
-                    #     val = int(expr.args[1].con.value)
-                    # if isinstance(val, int):
                     val = int(str(expr.args[1]), 16)
                     if val > 0x7f:
                         # 8비트에서 -2는 0xfe로 표현되므로, Sub64로 변환
@@ -450,13 +443,6 @@ def binop_simplifier(expr: IRExpr | pc.IRConst | int):
         
             case "Iop_Add16":
                 if isinstance(expr.args[1], Const):
-                    # if isinstance(expr.args[1].con, int):
-                    #     val = int(expr.args[1].con)
-                    # elif isinstance(expr.args[1].con, pc.U16):
-                    #     val = int(expr.args[1].con.value)
-                    # elif isinstance(expr.args[1].con, Const):
-                    #     val = int(expr.args[1].con.value)
-                    # if isinstance(val, int):
                     val = int(str(expr.args[1]), 16)
                     if val > 0x7fff:
                         # 16비트에서 -2는 0xfffe로 표현되므로, Sub64로 변환
@@ -466,13 +452,6 @@ def binop_simplifier(expr: IRExpr | pc.IRConst | int):
                         return Binop("Iop_Add64", [expr.args[0], Const(val)])
             case "Iop_Add32":
                 if isinstance(expr.args[1], Const):
-                    # if isinstance(expr.args[1].con, int):
-                    #     val = int(expr.args[1].con)
-                    # elif isinstance(expr.args[1].con, pc.U32):
-                    #     val = int(expr.args[1].con.value)
-                    # elif isinstance(expr.args[1].con, Const):
-                    #     val = int(expr.args[1].con.value)
-                    # if isinstance(val, int):
                     val = int(str(expr.args[1]), 16)
                     if val > 0x7fffffff:
                         # 32비트에서 -2는 0xfffffffe로 표현되므로, Sub64로 변환
@@ -502,6 +481,9 @@ def binop_simplifier(expr: IRExpr | pc.IRConst | int):
         elif isinstance(expr, ReturnSymbol):
             # ReturnSymbol은 이름을 재귀적으로 처리
             return ReturnSymbol(binop_simplifier(expr.name))
+        elif isinstance(expr, WildCardSymbol):
+            return expr  # WildCardSymbol은 그대로 반환'
+    
     elif isinstance(expr, ITE):
         # ITE의 경우, cond, iftrue, iffalse를 재귀적으로 처리
         return ITE(
@@ -517,6 +499,7 @@ def binop_simplifier(expr: IRExpr | pc.IRConst | int):
     elif isinstance(expr, str):
         # str은 그대로 반환
         return expr
+    
     else:
         # 다른 타입은 그대로 반환
         return expr
@@ -665,7 +648,11 @@ def expr_to_node(expr, level=0) -> Node:
         return Node("SR", [expr_to_node(expr.offset, level + 1)], level=level)
     elif isinstance(expr, WildCardSymbol):
         return Node("WildCard", level=level)
+    
     else:
+        if str(expr) == "Wildcard":
+            print(f"expr_to_node: expr is Wildcard, {expr}, type(expr): {type(expr)}")
+            exit(0)
         return Node(f"[UNKNOWN expr] {expr} ({type(expr).__name__})", level=level)
 
 

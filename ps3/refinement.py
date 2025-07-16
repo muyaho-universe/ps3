@@ -164,6 +164,10 @@ def single_refine(myself: dict[(InspectInfo, bool):list[InspectInfo]]) -> dict[(
             
             rebuild_new_key = single_refine_one(new_key_info)
             key = (rebuild_new_key, key[1])  # key는 (InspectInfo, bool) 형태
+            print(f"old_key: {old_key} -> rebuild_new_key: {rebuild_new_key}")
+            print(f"old_key.ins.expr: {old_key.ins.expr}")
+            print(f"rebuild_new_key.ins.expr: {rebuild_new_key.ins.expr}")
+            exit(0)
         my_effects[key] = []
         for info in value:
             new_info = rebuild_effects(info)
@@ -331,15 +335,20 @@ def simplify_all_addr_expr(expr):
         return expr
 
 def simplifier(expr):
+    print(f"simplifier: expr: {expr}")
     sim_expr = strip_trivial_unop(expr)
+    print(f"simplifier: strip_trivial_unop: {sim_expr}")
     try:
         bin_expr = binop_simplifier(sim_expr)
+        print(f"simplifier: binop_simplifier: {bin_expr}")
     except Exception as e:
         print(f"simplifier: 파싱 실패: {sim_expr}, type(sim_expr): {type(sim_expr)}")
         print(f"sim_expr: {sim_expr.args[1]}, type(sim_expr): {type(sim_expr.args[1])}, error: {e}")
         exit(0)
     cmp_expr = simplify_arith_cmp(bin_expr)
+    print(f"simplifier: simplify_arith_cmp: {cmp_expr}")
     addr_expr = simplify_all_addr_expr(cmp_expr)
+    print(f"simplifier: simplify_all_addr_expr: {addr_expr}")
     return addr_expr
 
 def rebuild_checker(original, ret, effect):
@@ -436,29 +445,37 @@ def binop_simplifier(expr: IRExpr | pc.IRConst | int):
                     val = int(str(expr.args[1]), 16)
                     if val > 0x7f:
                         # 8비트에서 -2는 0xfe로 표현되므로, Sub64로 변환
-                        return Binop("Iop_Sub64", [expr.args[0], Const(0x100 - val)])
+                        return Binop("Iop_Sub64", [binop_simplifier(expr.args[0]), Const(0x100 - val)])
                     else:
                         # 양수는 Add64로 변환
-                        return Binop("Iop_Add64", [expr.args[0], Const(val)])
+                        return Binop("Iop_Add64", [binop_simplifier(expr.args[0]), Const(val)])
         
             case "Iop_Add16":
                 if isinstance(expr.args[1], Const):
                     val = int(str(expr.args[1]), 16)
                     if val > 0x7fff:
                         # 16비트에서 -2는 0xfffe로 표현되므로, Sub64로 변환
-                        return Binop("Iop_Sub64", [expr.args[0], Const(0x10000 - val)])
+                        return Binop("Iop_Sub64", [binop_simplifier(expr.args[0]), Const(0x10000 - val)])
                     else:
                         # 양수는 Add64로 변환
-                        return Binop("Iop_Add64", [expr.args[0], Const(val)])
+                        return Binop("Iop_Add64", [binop_simplifier(expr.args[0]), Const(val)])
             case "Iop_Add32":
                 if isinstance(expr.args[1], Const):
                     val = int(str(expr.args[1]), 16)
                     if val > 0x7fffffff:
                         # 32비트에서 -2는 0xfffffffe로 표현되므로, Sub64로 변환
-                        return Binop("Iop_Sub64", [expr.args[0], Const(0x100000000 - val)])
+                        return Binop("Iop_Sub64", [binop_simplifier(expr.args[0]), Const(0x100000000 - val)])
                     else:
                         # 양수는 Add64로 변환
-                        return Binop("Iop_Add64", [expr.args[0], Const(val)])
+                        return Binop("Iop_Add64", [binop_simplifier(expr.args[0]), Const(val)])
+            case "Iop_Sub8"| "Iop_Sub16" | "Iop_Sub32":
+                return Binop("Iop_Sub64", [binop_simplifier(expr.args[0]), binop_simplifier(expr.args[1])])
+            case "Iop_And8" | "Iop_And16" | "Iop_And32":
+                # And 연산은 64비트로 변환
+                return Binop("Iop_And64", [binop_simplifier(expr.args[0]), binop_simplifier(expr.args[1])])
+            case "Iop_CmpLT8U" | "Iop_CmpLT16U" | "Iop_CmpLT32U":
+                # 부호 없는 비교는 64비트로 변환
+                return Binop("Iop_CmpLT64U", [binop_simplifier(expr.args[0]), binop_simplifier(expr.args[1])])
             case _:
                 # 다른 Binop은 그대로 반환
                 return Binop(expr.op, [binop_simplifier(expr.args[0]), binop_simplifier(expr.args[1])])

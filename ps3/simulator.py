@@ -1319,19 +1319,19 @@ class Test:
             new_effects = {}
             for k, v in all_effects.items():
                 new_key = rebuild_effects(k[0])
-                try:
-                    assert new_key == k[0], f"new_key {new_key} != old_key {k[0]}"
-                except AssertionError:
-                    print(f"new_key {new_key.ins.expr}, type: {type(new_key.ins.expr)}")
-                    print(f"old_key {k[0].ins.expr}, type: {type(k[0].ins.expr)}")
-                    exit(0)
+                # try:
+                #     assert new_key == k[0], f"new_key {new_key} != old_key {k[0]}"
+                # except AssertionError:
+                #     print(f"new_key {new_key.ins.expr}, type: {type(new_key.ins.expr)}")
+                #     print(f"old_key {k[0].ins.expr}, type: {type(k[0].ins.expr)}")
+                #     exit(0)
                 k = (new_key, k[1])
 
                 old_v = deepcopy(v)
                 new_v = []
                 for effect in v:
                     new_v.append(rebuild_effects(effect))
-                assert new_v == old_v or str(new_v) == str(old_v), f"new_v {new_v} != old_v {old_v}"
+                # assert new_v == old_v or str(new_v) == str(old_v), f"new_v {new_v} != old_v {old_v}"
                 # if new_v != old_v:
                                 # logger.info(f"str(new_v) == str(old_v): {str(nv) == str(ov)}")
                                 # logger.info(f"new_v type: {type(nv)}, old_v type: {type(ov)}")

@@ -2,6 +2,34 @@
 import simplify
 from effect import Effect
 
+def _pretty_z3(expr):
+    """
+    z3 BitVecVal의 2의 보수 음수 상수는 -로, Add/Sub는 수식 형태로 예쁘게 출력.
+    """
+    import z3
+
+    # BitVecVal(2의 보수 음수, 64) -> -n
+    if isinstance(expr, z3.BitVecNumRef):
+        val = expr.as_long()
+        if expr.size() == 64 and val > 0x7fffffffffffffff:
+            neg = 0x10000000000000000 - val
+            return f"-{neg}"
+        return str(val)
+
+    # Add/Sub 등 연산자 예쁘게
+    if z3.is_app_of(expr, z3.Z3_OP_BADD) and len(expr.children()) == 2:
+        left, right = expr.children()
+        # 오른쪽이 2의 보수 음수면 -로 출력
+        if isinstance(right, z3.BitVecNumRef) and right.size() == 64 and right.as_long() > 0x7fffffffffffffff:
+            neg = 0x10000000000000000 - right.as_long()
+            return f"{_pretty_z3(left)} - {neg}"
+        return f"{_pretty_z3(left)} + {_pretty_z3(right)}"
+    if z3.is_app_of(expr, z3.Z3_OP_BSUB) and len(expr.children()) == 2:
+        left, right = expr.children()
+        return f"{_pretty_z3(left)} - {_pretty_z3(right)}"
+    # 기타 연산은 기본 str
+    return str(expr)
+
 class InspectInfo:
     def __init__(self, ins:Effect) -> None:
         self.ins = ins
@@ -16,18 +44,40 @@ class InspectInfo:
     #     else:
     #         return str(self.ins)
 
+    # def __str__(self) -> str:
+    #     if isinstance(self.ins, Effect.Call):
+    #         simplified_args = [simplify.simplify(arg) for arg in self.ins.args]
+    #         return f"Call: {self.ins.name}({', '.join(map(str, simplified_args))})"
+    #     elif isinstance(self.ins, Effect.Condition):
+    #         return f"Condition: {simplify.simplify(self.ins.expr)}"
+    #     elif isinstance(self.ins, Effect.Return):
+    #         return f"Return: {simplify.simplify(self.ins.expr)}"
+    #     elif isinstance(self.ins, Effect.Put):
+    #         return f"Put: {self.ins.reg} = {simplify.simplify(self.ins.expr)}"
+    #     elif isinstance(self.ins, Effect.Store):
+    #         return f"Store: {simplify.simplify(self.ins.addr)} = {simplify.simplify(self.ins.expr)}"
+    #     else:
+    #         return str(self.ins)
+
     def __str__(self) -> str:
+        # simplify.simplify로 z3 expr를 얻고, _pretty_z3로 예쁘게 출력
         if isinstance(self.ins, Effect.Call):
             simplified_args = [simplify.simplify(arg) for arg in self.ins.args]
-            return f"Call: {self.ins.name}({', '.join(map(str, simplified_args))})"
+            pretty_args = [_pretty_z3(arg) for arg in simplified_args]
+            return f"Call: {self.ins.name}({', '.join(pretty_args)})"
         elif isinstance(self.ins, Effect.Condition):
-            return f"Condition: {simplify.simplify(self.ins.expr)}"
+            expr = simplify.simplify(self.ins.expr)
+            return f"Condition: {_pretty_z3(expr)}"
         elif isinstance(self.ins, Effect.Return):
-            return f"Return: {simplify.simplify(self.ins.expr)}"
+            expr = simplify.simplify(self.ins.expr)
+            return f"Return: {_pretty_z3(expr)}"
         elif isinstance(self.ins, Effect.Put):
-            return f"Put: {self.ins.reg} = {simplify.simplify(self.ins.expr)}"
+            expr = simplify.simplify(self.ins.expr)
+            return f"Put: {self.ins.reg} = {_pretty_z3(expr)}"
         elif isinstance(self.ins, Effect.Store):
-            return f"Store: {simplify.simplify(self.ins.addr)} = {simplify.simplify(self.ins.expr)}"
+            addr = simplify.simplify(self.ins.addr)
+            expr = simplify.simplify(self.ins.expr)
+            return f"Store: {_pretty_z3(addr)} = {_pretty_z3(expr)}"
         else:
             return str(self.ins)
 
@@ -37,22 +87,7 @@ class InspectInfo:
     def __hash__(self) -> int:
         return self._hash
     
-    # def __hash__(self):
-    #     # 내부 expr의 논리적 값 기반으로 hash 생성
-    #     if isinstance(self.ins, Effect.Call):
-    #         return hash((self.ins.name, tuple(map(str, self.ins.args))))
-    #     elif isinstance(self.ins, Effect.Condition):
-    #         return hash(("Condition", str(self.ins.expr)))
-    #     elif isinstance(self.ins, Effect.Return):
-    #         return hash(("Return", str(self.ins.expr)))
-    #     elif isinstance(self.ins, Effect.Put):
-    #         return hash(("Put", self.ins.reg, str(self.ins.expr)))
-    #     elif isinstance(self.ins, Effect.Store):
-    #         return hash(("Store", str(self.ins.addr), str(self.ins.expr)))
-    #     else:
-    #         return hash(str(self))
     def _compute_hash(self):
-        # 내부 expr의 논리적 값 기반으로 hash 생성
         if isinstance(self.ins, Effect.Call):
             return hash((self.ins.name, tuple(map(lambda x: str(simplify.simplify(x)), self.ins.args))))
         elif isinstance(self.ins, Effect.Condition):
@@ -123,32 +158,7 @@ class InspectInfo:
             return simplify.equal(a.addr, b.addr) and simplify.equal(a.expr, b.expr)
         return False
     
-    
-    # def show_eq(self, other):
-    #     if isinstance(other, InspectInfo):
-    #         if isinstance(self.ins, tuple) and isinstance(other.ins, tuple):
-    #             print(f"self: {self}")
-    #             print(f"other: {other}")
-    #             print(f"self.ins: {self.ins}")
-    #             print(f"other.ins: {other.ins}")
-    #             print(f"len(self.ins): {len(self.ins)}")
-    #             print(f"len(other.ins): {len(other.ins)}")
-    #             if len(self.ins) != len(other.ins):
-    #                 return False
-    #             for i in range(len(self.ins)):
-    #                 print(f"show_equal(self.ins[i], other.ins[i]): {show_equal(self.ins[i], other.ins[i])}")
-    #                 if not show_equal(self.ins[i], other.ins[i]):
-    #                     return False
-    #                 print(f"self.ins[{i}]: {self.ins[i]}")
-    #                 print(f"self.ins[{i}] type: {type(self.ins[i])}") 
-    #                 print(f"other.ins[{i}]: {other.ins[i]}")
-    #                 print(f"other.ins[{i}] type: {type(other.ins[i])}")
-    #             print("\n")
-    #             return True
-    #         else:
-    #             print(self)
-    #             assert False, "Not implemented"
-    #     return False
+
 
     def show_eq(self, other):
         if not isinstance(other, InspectInfo):

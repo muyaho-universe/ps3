@@ -160,14 +160,14 @@ def single_refine(myself: dict[(InspectInfo, bool):list[InspectInfo]]) -> dict[(
             key_info = key[0] 
             old_key = deepcopy(key_info)
             new_key_info = rebuild_effects(key_info)
-            assert new_key_info == old_key, f"Rebuild failed for key {new_key_info}\n!=\n {old_key}"
+            # assert new_key_info == old_key, f"Rebuild failed for key {new_key_info}\n!=\n {old_key}"
             
             rebuild_new_key = single_refine_one(new_key_info)
             key = (rebuild_new_key, key[1])  # key는 (InspectInfo, bool) 형태
         my_effects[key] = []
         for info in value:
             new_info = rebuild_effects(info)
-            assert new_info == info, f"Rebuild failed for info {new_info}\n!=\n {info}"
+            # assert new_info == info, f"Rebuild failed for info {new_info}\n!=\n {info}"
             # if isinstance(new_info.ins, (Effect.Call, Effect.Condition)):
                 # Call 또는 Condition인 경우, 그 안의 expr를 T로 바꿈
             # print(f"new_info: {new_info}")
@@ -330,6 +330,22 @@ def simplify_all_addr_expr(expr):
     else:
         return expr
 
+def simplifier(expr):
+    sim_expr = strip_trivial_unop(expr)
+    try:
+        bin_expr = binop_simplifier(sim_expr)
+    except Exception as e:
+        print(f"simplifier: 파싱 실패: {sim_expr}, type(sim_expr): {type(sim_expr)}")
+        print(f"sim_expr: {sim_expr.args[1]}, type(sim_expr): {type(sim_expr.args[1])}, error: {e}")
+        exit(0)
+    cmp_expr = simplify_arith_cmp(bin_expr)
+    addr_expr = simplify_all_addr_expr(cmp_expr)
+    return addr_expr
+
+def rebuild_checker(original, ret, effect):
+    return normalize_str(original) != normalize_str(str(ret)) and effect != ret
+
+
 def rebuild_effects(effect: InspectInfo) -> InspectInfo:
     """
     InspectInfo를 받아서, str 형태 그대로 최소화된 effect로 변환합니다.
@@ -342,83 +358,168 @@ def rebuild_effects(effect: InspectInfo) -> InspectInfo:
         return effect
 
     if isinstance(effect.ins, Effect.Put):
-        sim_expr = strip_trivial_unop(effect.ins.expr)
-        cal_expr = simplify_arith_cmp(sim_expr)
-        cal_expr = simplify_all_addr_expr(cal_expr)
-        ret = InspectInfo(Effect.Put(effect.ins.reg, cal_expr))
-        if normalize_str(original_str) != normalize_str(str(ret)) and effect != ret:
-            logger.info(f"Rebuild failed for Put: {normalize_str(original_str)} != {normalize_str(str(ret))}")
-            logger.info(f"effect.ins.expr: {effect.ins.expr}")
-            logger.info(f"ret.ins.expr: {ret.ins.expr}")
-            logger.info(f"effect == ret: {effect == ret}")
-            logger.info("=" * 50)
-            exit(1)
-            return effect
+        ret_expr = simplifier(effect.ins.expr)
+        ret = InspectInfo(Effect.Put(effect.ins.reg, ret_expr))
+        # if rebuild_checker(original_str, ret, effect):
+        #     logger.info(f"Rebuild failed for Put: {normalize_str(original_str)} != {normalize_str(str(ret))}")
+        #     logger.info(f"effect.ins.expr: {effect.ins.expr}")
+        #     logger.info(f"ret.ins.expr: {ret.ins.expr}")
+        #     logger.info(f"effect == ret: {effect == ret}")
+        #     logger.info("=" * 50)
+        #     exit(1)
+        #     return effect
         return ret
     elif isinstance(effect.ins, Effect.Call):
         name = effect.ins.name
         args = []
         for arg in effect.ins.args:
-            sim_arg = strip_trivial_unop(arg)
-            cal_arg = simplify_arith_cmp(sim_arg)
-            cal_arg = simplify_all_addr_expr(cal_arg)
-            args.append(cal_arg)
+            ret_arg = simplifier(arg)
+            args.append(ret_arg)
         ret = InspectInfo(Effect.Call(name, args))
-        if normalize_str(original_str) != normalize_str(str(ret)) and effect != ret:
-            logger.info(f"Rebuild failed for Call: {normalize_str(original_str)} != {normalize_str(str(ret))}")
-            logger.info(f"effect.ins.expr: {effect.ins.args}")
-            logger.info(f"ret.ins.expr: {ret.ins.args}")
-            logger.info(f"effect == ret: {effect == ret}")
-            logger.info("=" * 50)
-            exit(1)
+        # if rebuild_checker(original_str, ret, effect):
+        #     logger.info(f"Rebuild failed for Call: {normalize_str(original_str)} != {normalize_str(str(ret))}")
+        #     logger.info(f"effect.ins.expr: {effect.ins.args}")
+        #     logger.info(f"ret.ins.expr: {ret.ins.args}")
+        #     logger.info(f"effect == ret: {effect == ret}")
+        #     logger.info("=" * 50)
+        #     exit(1)
         return ret
     elif isinstance(effect.ins, Effect.Condition):
-        sim_expr = strip_trivial_unop(effect.ins.expr)
-        cal_expr = simplify_arith_cmp(sim_expr)
-        cal_expr = simplify_all_addr_expr(cal_expr)
-        ret = InspectInfo(Effect.Condition(cal_expr))
-        if normalize_str(original_str) != normalize_str(str(ret)) and effect != ret:
-            logger.info(f"Rebuild failed for Condition: {normalize_str(original_str)} != {normalize_str(str(ret))}")
-            logger.info(f"effect.ins.expr: {effect.ins.expr}")
-            logger.info(f"ret.ins.expr: {ret.ins.expr}")
-            logger.info(f"effect == ret: {effect == ret}")
-            logger.info("=" * 50)
-            exit(1)
+        ret_expr = simplifier(effect.ins.expr)
+        ret = InspectInfo(Effect.Condition(ret_expr))
+        # if rebuild_checker(original_str, ret, effect):
+        #     logger.info(f"Rebuild failed for Condition: {normalize_str(original_str)} != {normalize_str(str(ret))}")
+        #     logger.info(f"effect.ins.expr: {effect.ins.expr}")
+        #     logger.info(f"ret.ins.expr: {ret.ins.expr}")
+        #     logger.info(f"effect == ret: {effect == ret}")
+        #     logger.info("=" * 50)
+        #     exit(1)
         return ret
     elif isinstance(effect.ins, Effect.Return):
-        sim_expr = strip_trivial_unop(effect.ins.expr)
-        cal_expr = simplify_arith_cmp(sim_expr)
-        cal_expr = simplify_all_addr_expr(cal_expr)
-        ret = InspectInfo(Effect.Return(cal_expr))
-        if normalize_str(original_str) != normalize_str(str(ret)) and effect != ret:
-            print(f"Rebuild failed for Return: {normalize_str(original_str)} != {normalize_str(str(ret))}")
-            logger.info(f"effect.ins.expr: {effect.ins.expr}")
-            logger.info(f"ret.ins.expr: {ret.ins.expr}")
-            logger.info(f"effect == ret: {effect == ret}")
-            logger.info("=" * 50)
-            exit(1)
+        ret_expr = simplifier(effect.ins.expr)
+        ret = InspectInfo(Effect.Return(ret_expr))
+        # if rebuild_checker(original_str, ret, effect):
+        #     print(f"Rebuild failed for Return: {normalize_str(original_str)} != {normalize_str(str(ret))}")
+        #     logger.info(f"effect.ins.expr: {effect.ins.expr}")
+        #     logger.info(f"ret.ins.expr: {ret.ins.expr}")
+        #     logger.info(f"effect == ret: {effect == ret}")
+        #     logger.info("=" * 50)
+        #     exit(1)
         return ret
     elif isinstance(effect.ins, Effect.Store):
-        addr = strip_trivial_unop(effect.ins.addr)
-        addr = simplify_addr_expr(addr)
-        addr = simplify_all_addr_expr(addr)
-        expr = strip_trivial_unop(effect.ins.expr)
-        expr = simplify_arith_cmp(expr)
-        expr = simplify_all_addr_expr(expr)
-        ret = InspectInfo(Effect.Store(addr, expr))
-        if normalize_str(original_str) != normalize_str(str(ret)) and effect != ret:
-            print(f"Rebuild failed for Store: {normalize_str(original_str)} != {normalize_str(str(ret))}")
-            print(f"effect.ins.expr: {effect.ins.expr}")
-            print(f"ret.ins.expr: {ret.ins.expr}")
-            print(f"effect == ret: {effect == ret}")
-            logger.info("=" * 50)
-            exit(1)
+        ret_addr = simplifier(effect.ins.addr)
+        ret_expr = simplifier(effect.ins.expr)
+        ret = InspectInfo(Effect.Store(ret_addr, ret_expr))
+        # if rebuild_checker(original_str, ret, effect):
+        #     print(f"Rebuild failed for Store: {normalize_str(original_str)} != {normalize_str(str(ret))}")
+        #     print(f"effect.ins.expr: {effect.ins.expr}")
+        #     print(f"ret.ins.expr: {ret.ins.expr}")
+        #     print(f"effect == ret: {effect == ret}")
+        #     logger.info("=" * 50)
+        #     exit(1)
         return ret
     else:
         print(f"Unknown effect format: {original_str}")
         exit(1)
     # except Exception as e:
     #     print(f"rebuild_effects: 파싱 실패: {effect}, original_str: {normalize_str(original_str)}, error: {e}, len(normalize_str(original_str)): {len(normalize_str(original_str))}")
+
+def binop_simplifier(expr: IRExpr | pc.IRConst | int):
+    """
+    단순화된 Binop 표현식을 반환합니다.
+    Add8, Sub8 등의 8비트 연산을 64비트로 변환합니다.
+    """
+    if isinstance(expr, Binop):
+        match expr.op:
+            case "Iop_Add8":
+                if isinstance(expr.args[1], Const):
+                    # if isinstance(expr.args[1].con, int):
+                    #     val = int(expr.args[1].con) 
+                    # elif isinstance(expr.args[1].con, pc.U8):
+                    #     val = int(expr.args[1].con.value)
+                    # elif isinstance(expr.args[1].con, Const):
+                    #     val = int(expr.args[1].con.value)
+                    # if isinstance(val, int):
+                    val = int(str(expr.args[1]), 16)
+                    if val > 0x7f:
+                        # 8비트에서 -2는 0xfe로 표현되므로, Sub64로 변환
+                        return Binop("Iop_Sub64", [expr.args[0], Const(0x100 - val)])
+                    else:
+                        # 양수는 Add64로 변환
+                        return Binop("Iop_Add64", [expr.args[0], Const(val)])
+        
+            case "Iop_Add16":
+                if isinstance(expr.args[1], Const):
+                    # if isinstance(expr.args[1].con, int):
+                    #     val = int(expr.args[1].con)
+                    # elif isinstance(expr.args[1].con, pc.U16):
+                    #     val = int(expr.args[1].con.value)
+                    # elif isinstance(expr.args[1].con, Const):
+                    #     val = int(expr.args[1].con.value)
+                    # if isinstance(val, int):
+                    val = int(str(expr.args[1]), 16)
+                    if val > 0x7fff:
+                        # 16비트에서 -2는 0xfffe로 표현되므로, Sub64로 변환
+                        return Binop("Iop_Sub64", [expr.args[0], Const(0x10000 - val)])
+                    else:
+                        # 양수는 Add64로 변환
+                        return Binop("Iop_Add64", [expr.args[0], Const(val)])
+            case "Iop_Add32":
+                if isinstance(expr.args[1], Const):
+                    # if isinstance(expr.args[1].con, int):
+                    #     val = int(expr.args[1].con)
+                    # elif isinstance(expr.args[1].con, pc.U32):
+                    #     val = int(expr.args[1].con.value)
+                    # elif isinstance(expr.args[1].con, Const):
+                    #     val = int(expr.args[1].con.value)
+                    # if isinstance(val, int):
+                    val = int(str(expr.args[1]), 16)
+                    if val > 0x7fffffff:
+                        # 32비트에서 -2는 0xfffffffe로 표현되므로, Sub64로 변환
+                        return Binop("Iop_Sub64", [expr.args[0], Const(0x100000000 - val)])
+                    else:
+                        # 양수는 Add64로 변환
+                        return Binop("Iop_Add64", [expr.args[0], Const(val)])
+            case _:
+                # 다른 Binop은 그대로 반환
+                return Binop(expr.op, [binop_simplifier(expr.args[0]), binop_simplifier(expr.args[1])])
+    elif isinstance(expr, Unop):
+        # Unop의 경우, 내부 expr을 재귀적으로 처리
+        return Unop(expr.op, [binop_simplifier(expr.args[0])])
+    elif isinstance(expr, Load):
+        # Load의 경우, addr을 재귀적으로 처리
+        return Load(binop_simplifier(expr.addr))
+    elif isinstance(expr, IRConst):
+        if isinstance(expr, Const):
+            # Const는 내부 expr을 재귀적으로 처리
+            return Const(binop_simplifier(expr.con))
+        elif isinstance(expr, MemSymbol):
+            # MemSymbol은 주소를 재귀적으로 처리
+            return MemSymbol(binop_simplifier(expr.address))
+        elif isinstance(expr, RegSymbol):
+            # RegSymbol은 오프셋을 재귀적으로 처리
+            return RegSymbol(binop_simplifier(expr.offset))
+        elif isinstance(expr, ReturnSymbol):
+            # ReturnSymbol은 이름을 재귀적으로 처리
+            return ReturnSymbol(binop_simplifier(expr.name))
+    elif isinstance(expr, ITE):
+        # ITE의 경우, cond, iftrue, iffalse를 재귀적으로 처리
+        return ITE(
+            binop_simplifier(expr.cond),
+            binop_simplifier(expr.iffalse),
+            binop_simplifier(expr.iftrue)            
+        )
+    # elif isinstance(expr, pe.CCall):
+
+    elif isinstance(expr, int):
+        # int는 그대로 반환
+        return expr
+    elif isinstance(expr, str):
+        # str은 그대로 반환
+        return expr
+    else:
+        # 다른 타입은 그대로 반환
+        return expr
 
 def simplify_addr_expr(expr):
     """

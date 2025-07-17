@@ -164,21 +164,10 @@ def single_refine(myself: dict[(InspectInfo, bool):list[InspectInfo]]) -> dict[(
             
             rebuild_new_key = single_refine_one(new_key_info)
             key = (rebuild_new_key, key[1])  # key는 (InspectInfo, bool) 형태
-            print(f"old_key: {old_key} -> rebuild_new_key: {rebuild_new_key}")
-            print(f"old_key.ins.expr: {old_key.ins.expr}")
-            print(f"rebuild_new_key.ins.expr: {rebuild_new_key.ins.expr}")
-            exit(0)
         my_effects[key] = []
         for info in value:
             new_info = rebuild_effects(info)
-            # assert new_info == info, f"Rebuild failed for info {new_info}\n!=\n {info}"
-            # if isinstance(new_info.ins, (Effect.Call, Effect.Condition)):
-                # Call 또는 Condition인 경우, 그 안의 expr를 T로 바꿈
-            # print(f"new_info: {new_info}")
             new_info = single_refine_one(new_info)
-            # print(f"after single_refine_one: {new_info}")
-            # if isinstance(new_info.ins, (Effect.Put, Effect.Store)):
-            #     print(f"new_info.ins.expr: {new_info.ins.expr}")
             my_effects[key].append(new_info)
     # exit(0)
     return my_effects
@@ -335,20 +324,15 @@ def simplify_all_addr_expr(expr):
         return expr
 
 def simplifier(expr):
-    print(f"simplifier: expr: {expr}")
     sim_expr = strip_trivial_unop(expr)
-    print(f"simplifier: strip_trivial_unop: {sim_expr}")
     try:
         bin_expr = binop_simplifier(sim_expr)
-        print(f"simplifier: binop_simplifier: {bin_expr}")
     except Exception as e:
         print(f"simplifier: 파싱 실패: {sim_expr}, type(sim_expr): {type(sim_expr)}")
         print(f"sim_expr: {sim_expr.args[1]}, type(sim_expr): {type(sim_expr.args[1])}, error: {e}")
         exit(0)
     cmp_expr = simplify_arith_cmp(bin_expr)
-    print(f"simplifier: simplify_arith_cmp: {cmp_expr}")
     addr_expr = simplify_all_addr_expr(cmp_expr)
-    print(f"simplifier: simplify_all_addr_expr: {addr_expr}")
     return addr_expr
 
 def rebuild_checker(original, ret, effect):
@@ -369,14 +353,6 @@ def rebuild_effects(effect: InspectInfo) -> InspectInfo:
     if isinstance(effect.ins, Effect.Put):
         ret_expr = simplifier(effect.ins.expr)
         ret = InspectInfo(Effect.Put(effect.ins.reg, ret_expr))
-        # if rebuild_checker(original_str, ret, effect):
-        #     logger.info(f"Rebuild failed for Put: {normalize_str(original_str)} != {normalize_str(str(ret))}")
-        #     logger.info(f"effect.ins.expr: {effect.ins.expr}")
-        #     logger.info(f"ret.ins.expr: {ret.ins.expr}")
-        #     logger.info(f"effect == ret: {effect == ret}")
-        #     logger.info("=" * 50)
-        #     exit(1)
-        #     return effect
         return ret
     elif isinstance(effect.ins, Effect.Call):
         name = effect.ins.name
@@ -385,53 +361,23 @@ def rebuild_effects(effect: InspectInfo) -> InspectInfo:
             ret_arg = simplifier(arg)
             args.append(ret_arg)
         ret = InspectInfo(Effect.Call(name, args))
-        # if rebuild_checker(original_str, ret, effect):
-        #     logger.info(f"Rebuild failed for Call: {normalize_str(original_str)} != {normalize_str(str(ret))}")
-        #     logger.info(f"effect.ins.expr: {effect.ins.args}")
-        #     logger.info(f"ret.ins.expr: {ret.ins.args}")
-        #     logger.info(f"effect == ret: {effect == ret}")
-        #     logger.info("=" * 50)
-        #     exit(1)
         return ret
     elif isinstance(effect.ins, Effect.Condition):
         ret_expr = simplifier(effect.ins.expr)
         ret = InspectInfo(Effect.Condition(ret_expr))
-        # if rebuild_checker(original_str, ret, effect):
-        #     logger.info(f"Rebuild failed for Condition: {normalize_str(original_str)} != {normalize_str(str(ret))}")
-        #     logger.info(f"effect.ins.expr: {effect.ins.expr}")
-        #     logger.info(f"ret.ins.expr: {ret.ins.expr}")
-        #     logger.info(f"effect == ret: {effect == ret}")
-        #     logger.info("=" * 50)
-        #     exit(1)
         return ret
     elif isinstance(effect.ins, Effect.Return):
         ret_expr = simplifier(effect.ins.expr)
         ret = InspectInfo(Effect.Return(ret_expr))
-        # if rebuild_checker(original_str, ret, effect):
-        #     print(f"Rebuild failed for Return: {normalize_str(original_str)} != {normalize_str(str(ret))}")
-        #     logger.info(f"effect.ins.expr: {effect.ins.expr}")
-        #     logger.info(f"ret.ins.expr: {ret.ins.expr}")
-        #     logger.info(f"effect == ret: {effect == ret}")
-        #     logger.info("=" * 50)
-        #     exit(1)
         return ret
     elif isinstance(effect.ins, Effect.Store):
         ret_addr = simplifier(effect.ins.addr)
         ret_expr = simplifier(effect.ins.expr)
         ret = InspectInfo(Effect.Store(ret_addr, ret_expr))
-        # if rebuild_checker(original_str, ret, effect):
-        #     print(f"Rebuild failed for Store: {normalize_str(original_str)} != {normalize_str(str(ret))}")
-        #     print(f"effect.ins.expr: {effect.ins.expr}")
-        #     print(f"ret.ins.expr: {ret.ins.expr}")
-        #     print(f"effect == ret: {effect == ret}")
-        #     logger.info("=" * 50)
-        #     exit(1)
         return ret
     else:
         print(f"Unknown effect format: {original_str}")
         exit(1)
-    # except Exception as e:
-    #     print(f"rebuild_effects: 파싱 실패: {effect}, original_str: {normalize_str(original_str)}, error: {e}, len(normalize_str(original_str)): {len(normalize_str(original_str))}")
 
 def binop_simplifier(expr: IRExpr | pc.IRConst | int):
     """
@@ -468,11 +414,60 @@ def binop_simplifier(expr: IRExpr | pc.IRConst | int):
                     else:
                         # 양수는 Add64로 변환
                         return Binop("Iop_Add64", [binop_simplifier(expr.args[0]), Const(val)])
+            case "Iop_Add64":
+                if isinstance(expr.args[1], Const):
+                    val = int(str(expr.args[1]), 16)
+                    if val > 0x7fffffffffffffff:
+                        # 64비트에서 -2는 0xfffffffffffffffe로 표현되므로, Sub64로 변환
+                        return Binop("Iop_Sub64", [binop_simplifier(expr.args[0]), Const(0x10000000000000000 - val)])
+                    else:
+                        # 양수는 Add64로 변환
+                        return Binop("Iop_Add64", [binop_simplifier(expr.args[0]), Const(val)])
+                
             case "Iop_Sub8"| "Iop_Sub16" | "Iop_Sub32":
                 return Binop("Iop_Sub64", [binop_simplifier(expr.args[0]), binop_simplifier(expr.args[1])])
-            case "Iop_And8" | "Iop_And16" | "Iop_And32":
+            case "Iop_And8":
+                if isinstance(expr.args[1], Const):
+                    val = int(str(expr.args[1]), 16)
+                    if val > 0x7f:
+                        # 8비트에서 -2는 0xfe로 표현되므로, And64로 변환
+                        return Binop("Iop_And64", [binop_simplifier(expr.args[0]), Const(-(0x100 - val))])
+                    else:
+                        # 양수는 And64로 변환
+                        return Binop("Iop_And64", [binop_simplifier(expr.args[0]), Const(val)])
                 # And 연산은 64비트로 변환
                 return Binop("Iop_And64", [binop_simplifier(expr.args[0]), binop_simplifier(expr.args[1])])
+            case "Iop_And16":
+                if isinstance(expr.args[1], Const):
+                    val = int(str(expr.args[1]), 16)
+                    if val > 0x7fff:
+                        # 16비트에서 -2는 0xfffe로 표현되므로, And64로 변환
+                        return Binop("Iop_And64", [binop_simplifier(expr.args[0]), Const(-(0x10000 - val))])
+                    else:
+                        # 양수는 And64로 변환
+                        return Binop("Iop_And64", [binop_simplifier(expr.args[0]), Const(val)])
+                return Binop("Iop_And64", [binop_simplifier(expr.args[0]), binop_simplifier(expr.args[1])])
+            case "Iop_And32":
+                if isinstance(expr.args[1], Const):
+                    val = int(str(expr.args[1]), 16)
+                    if val > 0x7fffffff:
+                        # 32비트에서 -2는 0xfffffffe로 표현되므로, And64로 변환
+                        return Binop("Iop_And64", [binop_simplifier(expr.args[0]), Const(-(0x100000000 - val))])
+                    else:
+                        # 양수는 And64로 변환
+                        return Binop("Iop_And64", [binop_simplifier(expr.args[0]), Const(val)])
+                return Binop("Iop_And64", [binop_simplifier(expr.args[0]), binop_simplifier(expr.args[1])])
+            case "Iop_And64":
+                if isinstance(expr.args[1], Const):
+                    val = int(str(expr.args[1]), 16)
+                    if val > 0x7fffffffffffffff:
+                        # 64비트에서 -2는 0xfffffffffffffffe로 표현되므로, And64로 변환
+                        return Binop("Iop_And64", [binop_simplifier(expr.args[0]), Const(-(0x10000000000000000 - val))])
+                    else:
+                        # 양수는 And64로 변환
+                        return Binop("Iop_And64", [binop_simplifier(expr.args[0]), Const(val)])
+                return Binop("Iop_And64", [binop_simplifier(expr.args[0]), binop_simplifier(expr.args[1])])
+            
             case "Iop_CmpLT8U" | "Iop_CmpLT16U" | "Iop_CmpLT32U":
                 # 부호 없는 비교는 64비트로 변환
                 return Binop("Iop_CmpLT64U", [binop_simplifier(expr.args[0]), binop_simplifier(expr.args[1])])
@@ -512,7 +507,11 @@ def binop_simplifier(expr: IRExpr | pc.IRConst | int):
 
     elif isinstance(expr, int):
         # int는 그대로 반환
-        return expr
+        num = str(expr)
+        if num.startswith("0x"):
+            return int(num, 16)
+        else:
+            return int(num)
     elif isinstance(expr, str):
         # str은 그대로 반환
         return expr

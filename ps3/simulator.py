@@ -86,46 +86,6 @@ class Simulator:
         # dominator_builder.print_dom_tree(self.dom_tree, symbol.rebased_addr, labels=None)
         self.function = function
         self._init_map()
-    # def _init_function(self, funcname: str):
-    #     symbol = self.proj.loader.find_symbol(funcname)
-    #     if symbol is None:
-    #         if self.symbol is not None:
-    #             symbol = self.symbol
-    #         else: 
-    #             raise FunctionNotFound(
-    #                 f"symbol {funcname} not found in binary {self.proj}")
-    #     self.funcname = funcname
-    #     # print(f"symbol.size: {symbol.size}")
-        
-    #     cfg = self.proj.analyses.CFGFast(
-    #         regions=[(symbol.rebased_addr, symbol.rebased_addr + symbol.size)],
-    #         normalize=True,
-    #         force_complete_scan=True,
-    #         force_smart_scan=False
-    #     )
-        
-    #     function = None
-
-    #     for func in cfg.functions:
-    #         if cfg.functions[func].name == 'sub_400000':
-    #             cfg.functions[func].name = funcname
-    #             function = cfg.functions[func]
-    #             break
-    #         if cfg.functions[func].name == funcname:
-    #             function = cfg.functions[func]
-    #             break
-    #     # print(f"function: {function}")
-    #     # assert function is not None
-    #     if function is None:
-    #         logger.error(f"function {funcname} not found in binary {self.proj}")
-    #         raise FunctionNotFound(
-    #             f"function {funcname} not found in binary {self.proj}")
-        
-    #     self.graph = cfg.graph
-
-    #     self.cfg = cfg
-    #     self.function = function
-    #     self._init_map()
 
     def _init_map(self):
         # print("in _init_map")
@@ -163,32 +123,6 @@ class Simulator:
         self.addr2Node = {}
         for node in self.cfg.nodes():
             self.addr2Node[node.addr] = node
-    # def _init_map(self):
-    #     # print("in _init_map")
-    #     self.node2IR: dict[angr.knowledge_plugins.cfg.cfg_node.CFGNode,
-    #                        list[stmt.Statement]] = {}
-    #     self.addr2IR = {}
-    #     addr = None
-    #     for block in self.function.blocks:
-    #         # logger.info(f"block.vex: {block.vex}")
-    #         for statement in block.vex.statements:
-    #             # print(f"statement: {statement}")
-    #             # exit(0)
-    #             if isinstance(statement, ps.IMark):
-    #                 addr = statement.addr
-    #             stmtwrapper = stmt.Statement.construct(statement)
-    #             if addr not in self.addr2IR:
-    #                 self.addr2IR[addr] = []
-    #             self.addr2IR[addr].append(stmtwrapper)
-
-    #     for node in self.graph.nodes:
-    #         self.node2IR[node] = []
-    #         addrs = node.instruction_addrs
-    #         for addr in addrs:
-    #             if addr not in self.addr2IR:
-    #                 continue
-    #                 assert False, f"addr {hex(addr)} not in addr2IR"
-    #             self.node2IR[node].extend(self.addr2IR[addr])
 
         self.IR2addr = {}
         for addr in self.addr2IR.keys():
@@ -226,49 +160,6 @@ class Simulator:
         # print(visit)
         return visit
 
-    # def _reduce_addresses_by_basicblock(self, address: dict|list) -> tuple[set[int], list[dict]]:
-    #     # print("in _reduce_addresses_by_basicblock")
-    #     l = list(self.function.blocks)
-    #     result = set()
-    #     basic = []
-    #     if isinstance(address, list):
-    #         # address는 list일 수 있음
-    #         for addr in address:
-    #             for block in l:
-    #                 if addr in block.instruction_addrs:
-    #                     result.add(block.addr)
-    #                     basic.append({"parent": addr, "children": [], "parent_addrs": {block.addr}, "children_addrs": set()})
-    #                     break
-    #         return result, basic
-    #     else:
-    #         for parent, children in address.items():
-    #             # parent가 tuple일 수 있음
-    #             one_item = {"parent": parent, "children": children, "parent_addrs": set(), "children_addrs": set()}           
-    #             if isinstance(parent, tuple):
-    #                 bb_parent = set(addr for addr in parent)
-    #             else:
-    #                 bb_parent = {parent}
-    #             for addr in bb_parent:
-    #                 for block in l:
-    #                     if addr in block.instruction_addrs:
-    #                         result.add(block.addr)
-    #                         one_item["parent_addrs"].add(block.addr)
-    #                         break
-                
-    #             for addr in children:
-    #                 for block in l:
-    #                     if addr in block.instruction_addrs:
-    #                         result.add(block.addr)
-    #                         one_item["children_addrs"].add(block.addr)
-    #                         break
-    #             basic.append(one_item)
-    #         # for addr in address:
-    #         #     for block in l:
-    #         #         if addr in block.instruction_addrs:
-    #         #             result.add(block.addr)
-    #         #             break
-    #         return result, basic
-
     def _reduce_addresses_by_basicblock(self, address: list[int]) -> set[int]:
         l = list(self.function.blocks)
         result = set()
@@ -278,40 +169,6 @@ class Simulator:
                     result.add(block.addr)
                     break
         return result
-
-    # def generate_forall_bb(self, funcname: str, dic) -> dict:
-    #     # print("in generate_forall_bb")
-    #     try: 
-    #         self._init_function(funcname)
-    #     except FunctionNotFound:
-    #         raise FunctionNotFound(f"function {funcname} not found in binary {self.proj}")
-    #     all_addrs = []
-    #     collect = {}
-    #     for block in self.function.blocks:
-    #         all_addrs.extend(block.instruction_addrs)
-    #     # all_addrs는 int 리스트이므로 별도 처리 불필요
-    #     self.inspect_addrs = all_addrs
-    #     start_node = self.cfg.get_any_node(self.function.addr)
-    #     init_state = State(start_node, Environment())
-    #     reduce, info = self._reduce_addresses_by_basicblock(all_addrs)
-    #     reduce_addr = set(reduce)
-    #     # based on basic block inspect
-    #     init_state.inspect = {addr: {} for addr in reduce_addr}
-    #     init_state.inspect_patterns = dic
-    #     queue = [init_state]
-    #     visit = set()
-    #     while len(queue) > 0:  # DFS
-    #         state = queue.pop()
-    #         if state.node.addr in visit:
-    #             continue
-    #         result = self._simulateBB(state)
-    #         if isinstance(result, list):  # fork
-    #             visit.update(result[0].addrs)
-    #             queue.extend(result[1:])
-    #         else:  # state run to the end
-    #             visit.update(result.addrs)
-    #             collect.update(result.inspect)
-    #     return collect
 
     def generate_forall_bb(self, funcname: str, dic) -> dict:
         self._init_function(funcname)
@@ -660,9 +517,10 @@ class Simulator:
             state.addrs.append(state.node.addr)
             for statement in self.node2IR[state.node]:
                 machine_addr = self.IR2addr[statement]
+                # print(f"statement: {statement}, type: {type(statement)}, in self.inspect_addrs: {machine_addr in self.inspect_addrs}")
                 if machine_addr in self.inspect_addrs:
                     # print(f"machine_addr: {hex(machine_addr)}")
-                    # print(f"statement: {statement}") 
+                    # print(f"statement: {statement}, type: {type(statement)}") 
                     if isinstance(statement, stmt.Exit):
                         dst = statement.stmt.dst.value
                         self.from_to.append((state.node.addr, dst))

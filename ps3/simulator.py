@@ -36,6 +36,62 @@ sys.setrecursionlimit(10000)
 def hexl(l):
     return [hex(x) for x in l]
 
+def _update_new_trace(trace, temp_supernode, supernode_parent_map, supernode_map, dom_tree):
+    """
+    trace, temp_supernode, supernode_parent_map, supernode_map, dom_tree를 받아
+    new_trace를 업데이트하는 공통 로직을 함수로 분리
+    """
+    new_trace = {}
+    for k in trace.keys():
+        if k in supernode_parent_map:
+            parent = supernode_parent_map[k]
+            k_top = supernode_map[k]
+            if parent is None:
+                key = ("None", False)
+                new_trace[key] = []
+                for _, item in trace[k].items():
+                    new_trace[key].extend(item)
+                i = clean(new_trace[key])
+                new_trace[key] = i
+            else:
+                is_true_branch = dom_tree[parent][k_top].get('true_branch', False)
+                # trace[parent]를 순회해서 Condition 만 가져오기 (Condition, true_branch 여부)
+                for _, traces in trace[parent].items():
+                    for t in traces:
+                        if isinstance(t, InspectInfo) and isinstance(t.ins, Effect.Condition):
+                            # print(f"Condition: {t.effect.condition}, true_branch: {is_true_branch}")
+                            # parent_cond = t
+                            new_trace[(t, is_true_branch)] = []
+                            for _, item in trace[k].items():
+                                new_trace[(t, is_true_branch)].extend(item)
+                            i = clean(new_trace[(t, is_true_branch)])
+                            new_trace[(t, is_true_branch)] = i
+        else:
+            if k in temp_supernode:
+                for real_key in temp_supernode[k]:
+                    parent = supernode_parent_map[real_key]
+                    k_top = supernode_map[real_key]
+                    if parent is None:
+                        key = ("None", False)
+                        new_trace[key] = []
+                        for _, item in trace[k].items():
+                            new_trace[key].extend(item)
+                        i = clean(new_trace[key])
+                        new_trace[key] = i
+                    else:
+                        is_true_branch = dom_tree[parent][k_top].get('true_branch', False)
+                        # trace[parent]를 순회해서 Condition 만 가져오기 (Condition, true_branch 여부)
+                        for _, traces in trace[parent].items():
+                            for t in traces:
+                                if isinstance(t, InspectInfo) and isinstance(t.ins, Effect.Condition):
+                                    # print(f"Condition: {t.effect.condition}, true_branch: {is_true_branch}")
+                                    new_trace[(t, is_true_branch)] = []
+                                    for _, item in trace[k].items():
+                                        new_trace[(t, is_true_branch)].extend(item)
+                                    i = clean(new_trace[(t, is_true_branch)])
+                                    new_trace[(t, is_true_branch)] = i
+    return new_trace
+
 
 class State:
     def __init__(self, node: angr.knowledge_plugins.cfg.cfg_node.CFGNode, env: Environment) -> None:
@@ -265,51 +321,6 @@ class Simulator:
                                 # new_collect[key] = i
         return new_collect
 
-    # def generate(self, funcname: str, addresses: dict, patterns) -> tuple[dict, list[dict]]:
-    #     # print("in Simulator generate")
-        
-    #     self._init_function(funcname)
-    #     trace = {}
-    #     reduce, info = self._reduce_addresses_by_basicblock(addresses)
-    #     reduce_addr = set(reduce)
-    #     reachable = self._reachable_set(reduce_addr)
-    #     start_node = self.cfg.get_any_node(self.function.addr)
-    #     flatten_list = []
-    #     for parent, children in addresses.items():
-    #         # parent가 tuple일 수 있음
-    #         if isinstance(parent, tuple):
-    #             flatten_list.extend(list(parent))
-    #         else:
-    #             flatten_list.append(parent)
-    #         flatten_list.extend(children)
-
-    #     # self.inspect_addrs = addresses
-    #     self.inspect_addrs = flatten_list
-    #     init_state = State(start_node, Environment())
-    #     # based on basic block inspect
-    #     init_state.inspect = {addr: {} for addr in reduce_addr}
-    #     init_state.inspect_patterns = patterns
-    #     queue = [init_state]
-    #     visit = set()
-    #     while len(queue) > 0:  # DFS
-    #         state = queue.pop()
-    #         if state.node.addr not in reachable:
-    #             continue
-    #         if state.node.addr in visit:
-    #             continue
-    #         result = self._simulateBB(state, step_one=True)
-            
-    #         if isinstance(result, list):  # fork
-    #             visit.update(result[0].addrs)
-    #             trace.update(result[0].inspect)
-    #             queue.extend(result)
-    #         # else: # state run to the end
-    #         #     if result.node.addr in reduce_addr:
-    #         #         breakpoint()
-    #         #     visit.update(result.addrs)
-    #         #     trace.update(result.inspect)
-    #         #     queue.append(result)
-    #     return trace, info
     def get_supernode_for_addresses(self, addresses: list[int]) -> dict[int, int]:
         """
         각 address가 속한 super node(대표 주소)를 반환합니다.
@@ -350,6 +361,7 @@ class Simulator:
                     parent = p
                     break
             result[addr] = parent
+            # print(f"addr {hex(addr)} -> supernode {hex(supernode)}, parent {hex(parent) if parent is not None else 'None'}")
         return result
     
     def get_parent_supernode_nodeobj_for_addresses(self, addresses: list[int]) -> dict[int, angr.knowledge_plugins.cfg.cfg_node.CFGNode | None]:
@@ -404,7 +416,6 @@ class Simulator:
         self._init_function(funcname)
         self.supernode_parent_map = self.get_parent_supernode_addr_for_addresses(addresses)
         self.address_parent = self.get_parent_supernode_nodeobj_for_addresses(addresses)
-
         trace = {}
         reduce_addr = set(self._reduce_addresses_by_basicblock(addresses))
         reachable = self._reachable_set(reduce_addr)
@@ -418,13 +429,14 @@ class Simulator:
 
         for addr in addresses:
             parent_addr = self.supernode_parent_map[addr]
+            # parent_addr = self.supernode_parent_map[addr].keys()
             if parent_addr not in init_state.inspect:
                 init_state.inspect[parent_addr] = {}
             if self.address_parent[addr] is not None:
                 for parent_addr in self.address_parent[addr]:
                         if parent_addr not in self.inspect_addrs:
                             self.inspect_addrs.append(parent_addr)
-                
+        # print(f"self.inspect_addrs: {hexl(self.inspect_addrs)}")
         queue = [init_state]
         visit = set()
         while len(queue) > 0:  # DFS
@@ -441,6 +453,7 @@ class Simulator:
                 visit.update(result[0].addrs)
                 trace.update(result[0].inspect)
                 queue.extend(result)
+                # print(f"trace: {trace}")
 
             # else: # state run to the end
             #     if result.node.addr in reduce_addr:
@@ -448,10 +461,9 @@ class Simulator:
             #     visit.update(result.addrs)
             #     trace.update(result.inspect)
             #     queue.append(result)
-            # print(f"trace: {trace}")
         # trace를 parent-child 관계로 변환
         for parent, child in self.dom_tree.edges():
-            # print(f"parent: {parent}, child: {child}")
+            # print(f"parent: {hex(parent)}, child: {hex(child)}")
             # print(f"from_to: {self.from_to}")
             is_true_branch = (parent, child) in self.from_to
             self.dom_tree[parent][child]['true_branch'] = is_true_branch
@@ -480,35 +492,19 @@ class Simulator:
         #         for k2, v2 in v.items():
         #             print(f"  key2: {hex(k2)}, value2: {v2}")
 
-        for k in trace.keys():
-            # print(f"key: {k}, in self.supernode_parent_map: {k in self.supernode_parent_map}")
-            if k in self.supernode_parent_map:
-                parent = self.supernode_parent_map[k]
-                k_top = self.supernode_map[k]
-                if parent is None:
-                    key = ("None", False)
-                    new_trace[key] = []
-                    for _, item in trace[k].items():
-                        new_trace[key].extend(item)
-                    i = clean(new_trace[key])
-                    new_trace[key] = i
-                else:
-                    is_true_branch = self.dom_tree[parent][k_top].get('true_branch', False)
-                    # trace[parent]를 순회해서 Condition 만 가져오기 (Condition, true_branch 여부)
-                    for _, traces in trace[parent].items():
-                        for t in traces:
-                            if isinstance(t, InspectInfo) and isinstance(t.ins, Effect.Condition):
-                                # print(f"Condition: {t.effect.condition}, true_branch: {is_true_branch}")
-                                # parent_cond = t
-                                new_trace[(t, is_true_branch)] = []
-                                for _, item in trace[k].items():
-                                    new_trace[(t, is_true_branch)].extend(item)
-                                i = clean(new_trace[(t, is_true_branch)])
-                                new_trace[(t, is_true_branch)] = i
-                # print(f"0x{k:x} -> 0x{parent:x}, true_branch: {is_true_branch}")
-            # else:
-            #     print(f"Warning: {k} not in supernode_parent_map")
-        # print(f"new_trace: {new_trace}")
+        temp_supernode = {}
+        for k, v in self.supernode_map.items():
+            if v is not None:
+                if v not in temp_supernode:
+                    temp_supernode[v] = []
+                temp_supernode[v].append(k)
+        
+        # 기존 중복 코드 대신 함수 호출로 대체
+        new_trace = _update_new_trace(trace, temp_supernode, self.supernode_parent_map, self.supernode_map, self.dom_tree)
+        keys_to_delete = [k for k, v in new_trace.items() if v == []]
+        for k in keys_to_delete:
+            del new_trace[k]
+        
         return new_trace
     
 
@@ -1195,7 +1191,7 @@ class Test:
                                 # logger.info(f"new_v type: {type(nv)}, old_v type: {type(ov)}")
                                 # logger.info(f"new_v ins: {nv.ins}, old_v ins: {ov.ins}")
                                 # logger.info(f"new_v expr: {nv.expr}, old_v expr: {ov.expr}")
-                    # raise AssertionError(f"new_v != old_v, {str(new_v) == str(old_v)}")
+                    # raise AssertionError(f"new_v != old_v, {str(new_v) == str(ov)}")
                 new_effects[k] = new_v
 
             all_effects = new_effects
@@ -1354,20 +1350,20 @@ class Test:
                         if pv in all_effects[patch_key]:
                             patch_match.append(pv)
             logger.info(f"vuln match {vuln_match}, patch match {patch_match}")
-            # If the pattern is If, then we should check there at least one condition in matched effect
-            if patch_use_pattern == "If":
-                # patch_match = [
-                #     i for i in patch_match if i.ins[0] == "Condition"]
-                patch_match = [i for i in patch_match if isinstance(i.ins, Effect.Condition)]
-                if len(patch_match) == 0:
-                    result.append("vuln")
-                    continue
-            if vuln_use_pattern == "If":
-                # vuln_match = [i for i in vuln_match if i.ins[0] == "Condition"]
-                vuln_match = [i for i in vuln_match if isinstance(i.ins, Effect.Condition)]
-                if len(vuln_match) == 0:
-                    result.append("patch")
-                    continue
+            # # If the pattern is If, then we should check there at least one condition in matched effect
+            # if patch_use_pattern == "If":
+            #     # patch_match = [
+            #     #     i for i in patch_match if i.ins[0] == "Condition"]
+            #     patch_match = [i for i in patch_match if isinstance(i.ins, Effect.Condition)]
+            #     if len(patch_match) == 0:
+            #         result.append("vuln")
+            #         continue
+            # if vuln_use_pattern == "If":
+            #     # vuln_match = [i for i in vuln_match if i.ins[0] == "Condition"]
+            #     vuln_match = [i for i in vuln_match if isinstance(i.ins, Effect.Condition)]
+            #     if len(vuln_match) == 0:
+            #         result.append("patch")
+            #         continue
             vuln_num = self._match2len(vuln_match)
             patch_num = self._match2len(patch_match)
             # print(vuln_num, patch_num, funcname)

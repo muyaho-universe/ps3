@@ -135,6 +135,7 @@ def single_refine_one(info: InspectInfo) -> InspectInfo:
     InspectInfo의 ins가 Call 또는 Condition인 경우, 그 안의 expr를 T로 바꾼다.
     """
     effect = deepcopy(info.ins)
+    print(f"info: {info}")
     root = effect_to_node(info.ins)
     # root.print()
     new_tree = generalize_node(root)
@@ -325,8 +326,10 @@ def simplify_all_addr_expr(expr):
 
 def simplifier(expr):
     sim_expr = strip_trivial_unop(expr)
+    # print(f"simplifier: sim_expr: {sim_expr}, type(sim_expr): {type(sim_expr)}")
     try:
         bin_expr = binop_simplifier(sim_expr)
+        # print(f"simplifier: bin_expr: {bin_expr}, type(bin_expr): {type(bin_expr)}")
     except Exception as e:
         print(f"simplifier: 파싱 실패: {sim_expr}, type(sim_expr): {type(sim_expr)}")
         print(f"sim_expr: {sim_expr.args[1]}, type(sim_expr): {type(sim_expr.args[1])}, error: {e}")
@@ -423,9 +426,10 @@ def binop_simplifier(expr: IRExpr | pc.IRConst | int):
                     else:
                         # 양수는 Add64로 변환
                         return Binop("Iop_Add64", [binop_simplifier(expr.args[0]), Const(val)])
-                
+                return Binop("Iop_Add64", [binop_simplifier(expr.args[0]), binop_simplifier(expr.args[1])])
             case "Iop_Sub8"| "Iop_Sub16" | "Iop_Sub32":
                 return Binop("Iop_Sub64", [binop_simplifier(expr.args[0]), binop_simplifier(expr.args[1])])
+
             case "Iop_And8":
                 if isinstance(expr.args[1], Const):
                     val = int(str(expr.args[1]), 16)
@@ -468,9 +472,6 @@ def binop_simplifier(expr: IRExpr | pc.IRConst | int):
                         return Binop("Iop_And64", [binop_simplifier(expr.args[0]), Const(val)])
                 return Binop("Iop_And64", [binop_simplifier(expr.args[0]), binop_simplifier(expr.args[1])])
             
-            case "Iop_CmpLT8U" | "Iop_CmpLT16U" | "Iop_CmpLT32U":
-                # 부호 없는 비교는 64비트로 변환
-                return Binop("Iop_CmpLT64U", [binop_simplifier(expr.args[0]), binop_simplifier(expr.args[1])])
             case _:
                 # 다른 Binop은 그대로 반환
                 return Binop(expr.op, [binop_simplifier(expr.args[0]), binop_simplifier(expr.args[1])])
@@ -669,6 +670,8 @@ def expr_to_node(expr, level=0) -> Node:
         if str(expr) == "Wildcard":
             print(f"expr_to_node: expr is Wildcard, {expr}, type(expr): {type(expr)}")
             exit(0)
+        print(f"expr_to_node: Unknown expr type: {type(expr)}, expr: {expr}")
+        exit(0)
         return Node(f"[UNKNOWN expr] {expr} ({type(expr).__name__})", level=level)
 
 

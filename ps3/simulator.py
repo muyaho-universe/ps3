@@ -491,7 +491,6 @@ class Simulator:
         #     if isinstance(v, dict):
         #         for k2, v2 in v.items():
         #             print(f"  key2: {hex(k2)}, value2: {v2}")
-
         temp_supernode = {}
         for k, v in self.supernode_map.items():
             if v is not None:
@@ -516,19 +515,15 @@ class Simulator:
                 # print(f"statement: {statement}, type: {type(statement)}, in self.inspect_addrs: {machine_addr in self.inspect_addrs}")
                 if machine_addr in self.inspect_addrs:
                     # print(f"machine_addr: {hex(machine_addr)}")
-                    # print(f"statement: {statement}, type: {type(statement)}") 
                     if isinstance(statement, stmt.Exit):
                         dst = statement.stmt.dst.value
                         self.from_to.append((state.node.addr, dst))
-                        # print(f"Exit statement found: {hex(state.node.addr)} -> {hex(dst)} in {statement}")
                     cond = statement.simulate(state.env, True)
                     basicblock_addr = state.node.addr
-                    # logger.info(f"basicblock_addr: {hex(basicblock_addr)}")
                     assert basicblock_addr in state.inspect
                     block = state.inspect[basicblock_addr]
                     # logger.info(f"block: {block}")
                     if machine_addr not in block:
-                        # logger.info(f"machine_addr not in block")
                         block[machine_addr] = []
                     if isinstance(cond, InspectInfo):
                         # logger.info(f"cond is InspectInfo")

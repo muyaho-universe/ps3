@@ -3,9 +3,6 @@ import simplify
 from effect import Effect
 
 def _pretty_z3(expr):
-    """
-    z3 BitVecVal의 2의 보수 음수 상수는 -로, Add/Sub는 수식 형태로 예쁘게 출력.
-    """
     import z3
 
     # BitVecVal(2의 보수 음수, 64) -> -n
@@ -16,13 +13,16 @@ def _pretty_z3(expr):
             return f"-{neg}"
         return str(val)
 
-    # Add/Sub 등 연산자 예쁘게
+    # a + (2의 보수 음수) -> a - n
     if z3.is_app_of(expr, z3.Z3_OP_BADD) and len(expr.children()) == 2:
         left, right = expr.children()
-        # 오른쪽이 2의 보수 음수면 -로 출력
         if isinstance(right, z3.BitVecNumRef) and right.size() == 64 and right.as_long() > 0x7fffffffffffffff:
             neg = 0x10000000000000000 - right.as_long()
             return f"{_pretty_z3(left)} - {neg}"
+        # 왼쪽이 2의 보수 음수면 (드물지만) 반대도 처리
+        if isinstance(left, z3.BitVecNumRef) and left.size() == 64 and left.as_long() > 0x7fffffffffffffff:
+            neg = 0x10000000000000000 - left.as_long()
+            return f"{_pretty_z3(right)} - {neg}"
         return f"{_pretty_z3(left)} + {_pretty_z3(right)}"
     if z3.is_app_of(expr, z3.Z3_OP_BSUB) and len(expr.children()) == 2:
         left, right = expr.children()

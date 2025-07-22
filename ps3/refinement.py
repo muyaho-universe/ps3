@@ -135,7 +135,7 @@ def single_refine_one(info: InspectInfo) -> InspectInfo:
     InspectInfo의 ins가 Call 또는 Condition인 경우, 그 안의 expr를 T로 바꾼다.
     """
     effect = deepcopy(info.ins)
-    print(f"info: {info}")
+   
     root = effect_to_node(info.ins)
     # root.print()
     new_tree = generalize_node(root)
@@ -243,6 +243,8 @@ def strip_trivial_unop(expr):
         # 기타
         "Iop_1Uto8", "Iop_1Uto16", "Iop_1Uto32",
         "Iop_8Uto8", "Iop_16Uto16", "Iop_32Uto32", "Iop_64Uto64",
+        "Iop_128Uto64", "Iop_128Uto64", "Iop_128Uto32", "Iop_128Uto16", "Iop_128Uto8",
+        "Iop_128to64", "Iop_128to32", "Iop_128to16", "Iop_128to8", 
     }
     # Unop이면서 의미 없는 변환이면 재귀적으로 벗김
     while isinstance(expr, Unop) and expr.op in trivial_unops:
@@ -326,10 +328,8 @@ def simplify_all_addr_expr(expr):
 
 def simplifier(expr):
     sim_expr = strip_trivial_unop(expr)
-    # print(f"simplifier: sim_expr: {sim_expr}, type(sim_expr): {type(sim_expr)}")
     try:
         bin_expr = binop_simplifier(sim_expr)
-        # print(f"simplifier: bin_expr: {bin_expr}, type(bin_expr): {type(bin_expr)}")
     except Exception as e:
         print(f"simplifier: 파싱 실패: {sim_expr}, type(sim_expr): {type(sim_expr)}")
         print(f"sim_expr: {sim_expr.args[1]}, type(sim_expr): {type(sim_expr.args[1])}, error: {e}")
@@ -408,6 +408,7 @@ def binop_simplifier(expr: IRExpr | pc.IRConst | int):
                     else:
                         # 양수는 Add64로 변환
                         return Binop("Iop_Add64", [binop_simplifier(expr.args[0]), Const(val)])
+                return Binop("Iop_Add64", [binop_simplifier(expr.args[0]), binop_simplifier(expr.args[1])])
             case "Iop_Add32":
                 if isinstance(expr.args[1], Const):
                     val = int(str(expr.args[1]), 16)
@@ -417,6 +418,7 @@ def binop_simplifier(expr: IRExpr | pc.IRConst | int):
                     else:
                         # 양수는 Add64로 변환
                         return Binop("Iop_Add64", [binop_simplifier(expr.args[0]), Const(val)])
+                return Binop("Iop_Add64", [binop_simplifier(expr.args[0]), binop_simplifier(expr.args[1])])
             case "Iop_Add64":
                 if isinstance(expr.args[1], Const):
                     val = int(str(expr.args[1]), 16)
@@ -471,7 +473,10 @@ def binop_simplifier(expr: IRExpr | pc.IRConst | int):
                         # 양수는 And64로 변환
                         return Binop("Iop_And64", [binop_simplifier(expr.args[0]), Const(val)])
                 return Binop("Iop_And64", [binop_simplifier(expr.args[0]), binop_simplifier(expr.args[1])])
-            
+            case "Iop_Mul8"| "Iop_Mul16" | "Iop_Mul32":
+                return Binop("Iop_Mul64", [binop_simplifier(expr.args[0]), binop_simplifier(expr.args[1])])
+            case "Iop_Div8"| "Iop_Div16" | "Iop_Div32":
+                return Binop("Iop_Div64", [binop_simplifier(expr.args[0]), binop_simplifier(expr.args[1])])
             case _:
                 # 다른 Binop은 그대로 반환
                 return Binop(expr.op, [binop_simplifier(expr.args[0]), binop_simplifier(expr.args[1])])

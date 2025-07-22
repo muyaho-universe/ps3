@@ -17,6 +17,7 @@ from refinement import refine_sig, rebuild_effects, effect_to_node, single_refin
 from copy import deepcopy
 import dominator_builder
 from key_equal import key_checker
+from angr.analyses.cfg import indirect_jump_resolvers
 
 
 class FunctionNotFound(Exception):
@@ -154,18 +155,46 @@ class Simulator:
                 f"symbol {funcname} not found in binary {self.proj}")
         self.funcname = funcname
         cfg = self.proj.analyses.CFGFast(
-            regions=[(symbol.rebased_addr, symbol.rebased_addr + symbol.size)], normalize=True)
+            regions=[(symbol.rebased_addr, symbol.rebased_addr + symbol.size)], normalize=True, resolve_indirect_jumps=True)
+        
+        # ijr = indirect_jump_resolvers.IndirectJumpResolver(cfg=cfg)
+        # ijr.resolve()
+        # print(f"ijr: {len(ijr.indirect_jumps)} indirect jumps resolved")
+        for k, v in cfg.indirect_jumps.items():
+            print(f"IndirectJump {hex(k)}:")
+            print(f"IndirectJump addr: {hex(v.addr)}")
+            print(f"Jump table address: {hex(v.jumptable) if v.jumptable else None}")
+            print(f"Jump table entries: {hexl(v.jumptable_entries)}")
+            print(f"Resolved targets: {hexl(v.resolved_targets)}")
+            print(f"Instruction address: {hex(v.ins_addr)}")
+            print(f"Jump kind: {v.jumpkind}")
+            # print(f"parsed: {v.parse()}")
+            # print(f"parse_from_cmessage: {v.parse_from_cmessage()}")
+            # print(f"serialized: {v.serialize()}")
+            # print(f"serialized_to_cmessage: {v.serialize_to_cmessage()}")
+            print(f"stmt_idx: {v.stmt_idx}")
+            print(f"All attributes: {dir(v)}")
+        for node in cfg.graph.nodes:
+            for succ, jumpkind in node.successors_and_jumpkinds():
+                print(f"{hex(node.addr)} -> {hex(succ.addr)} ({jumpkind})")
         function = None
         for func in cfg.functions:
             if cfg.functions[func].name == funcname:
                 function = cfg.functions[func]
                 break
+        for block in function.blocks:
+            if block.addr == 0x72b7de:
+                print(f"block.vex: {block.vex}")
+                print(f"block.addr: {hex(block.addr)}")
+                print(f"block.instruction_addrs: {hexl(block.instruction_addrs)}")
+        
         assert function is not None
         self.graph = cfg.graph
         self.cfg = cfg
         self.dom_tree, self.super_node = dominator_builder.build_dominator_tree(cfg, funcname)
         # print(f"self.parent_info: {self.parent_info}")
-        # dominator_builder.print_dom_tree(self.dom_tree, symbol.rebased_addr, labels=None)
+        dominator_builder.print_dom_tree(self.dom_tree, symbol.rebased_addr, labels=None)
+        exit(0)
         self.function = function
         self._init_map()
 
@@ -186,7 +215,7 @@ class Simulator:
                 if addr not in self.addr2IR:
                     self.addr2IR[addr] = []
                 self.addr2IR[addr].append(stmtwrapper)
-
+        exit(0)
         for node in self.graph.nodes:
             self.node2IR[node] = []
             addrs = node.instruction_addrs
@@ -462,7 +491,8 @@ class Simulator:
                 for parent_addr in self.address_parent[addr]:
                         if parent_addr not in self.inspect_addrs:
                             self.inspect_addrs.append(parent_addr)
-
+        print(f"addresses: {hexl(addresses)}")
+        print(f"self.inspect_addrs: {hexl(self.inspect_addrs)}")
         queue = [init_state]
         visit = set()
         while len(queue) > 0:  # DFS
@@ -487,6 +517,8 @@ class Simulator:
             #     visit.update(result.addrs)
             #     trace.update(result.inspect)
             #     queue.append(result)
+        print(f"trace: {trace}")
+        exit(0)
         # trace를 parent-child 관계로 변환
         for parent, child in self.dom_tree.edges():
             # print(f"parent: {hex(parent)}, child: {hex(child)}")
@@ -540,6 +572,7 @@ class Simulator:
                 # print(f"statement: {statement}, type: {type(statement)}, in self.inspect_addrs: {machine_addr in self.inspect_addrs}")
                 if machine_addr in self.inspect_addrs:
                     # print(f"machine_addr: {hex(machine_addr)}")
+                    print(f"statement: {statement}, type: {type(statement)}")
                     if isinstance(statement, stmt.Exit):
                         dst = statement.stmt.dst.value
                         self.from_to.append((state.node.addr, dst))

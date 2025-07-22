@@ -36,7 +36,7 @@ sys.setrecursionlimit(10000)
 def hexl(l):
     return [hex(x) for x in l]
 
-def _update_new_trace(trace, temp_supernode, supernode_parent_map, supernode_map, dom_tree):
+def _update_new_trace(trace, temp_supernode, supernode_parent_map, supernode_map, dom_tree, super_node):
     """
     trace, temp_supernode, supernode_parent_map, supernode_map, dom_tree를 받아
     new_trace를 업데이트하는 공통 로직을 함수로 분리
@@ -90,6 +90,32 @@ def _update_new_trace(trace, temp_supernode, supernode_parent_map, supernode_map
                                         new_trace[(t, is_true_branch)].extend(item)
                                     i = clean(new_trace[(t, is_true_branch)])
                                     new_trace[(t, is_true_branch)] = i
+            elif k in super_node:
+                # super_node에 있는 경우. 보통 단일 함수 블럭
+                new_k = super_node[k]
+                if new_k in temp_supernode:
+                    for real_key in temp_supernode[new_k]:
+                        parent = supernode_parent_map[real_key]
+                        k_top = supernode_map[real_key]
+                        if parent is None:
+                            key = ("None", False)
+                            new_trace[key] = []
+                            for _, item in trace[k].items():
+                                new_trace[key].extend(item)
+                            i = clean(new_trace[key])
+                            new_trace[key] = i
+                        else:
+                            is_true_branch = dom_tree[parent][k_top].get('true_branch', False)
+                            # trace[parent]를 순회해서 Condition 만 가져오기 (Condition, true_branch 여부)
+                            for _, traces in trace[parent].items():
+                                for t in traces:
+                                    if isinstance(t, InspectInfo) and isinstance(t.ins, Effect.Condition):
+                                        # print(f"Condition: {t.effect.condition}, true_branch: {is_true_branch}")
+                                        new_trace[(t, is_true_branch)] = []
+                                        for _, item in trace[k].items():
+                                            new_trace[(t, is_true_branch)].extend(item)
+                                        i = clean(new_trace[(t, is_true_branch)])
+                                        new_trace[(t, is_true_branch)] = i
     return new_trace
 
 
@@ -436,7 +462,7 @@ class Simulator:
                 for parent_addr in self.address_parent[addr]:
                         if parent_addr not in self.inspect_addrs:
                             self.inspect_addrs.append(parent_addr)
-        # print(f"self.inspect_addrs: {hexl(self.inspect_addrs)}")
+
         queue = [init_state]
         visit = set()
         while len(queue) > 0:  # DFS
@@ -497,13 +523,12 @@ class Simulator:
                 if v not in temp_supernode:
                     temp_supernode[v] = []
                 temp_supernode[v].append(k)
-        
+
         # 기존 중복 코드 대신 함수 호출로 대체
-        new_trace = _update_new_trace(trace, temp_supernode, self.supernode_parent_map, self.supernode_map, self.dom_tree)
+        new_trace = _update_new_trace(trace, temp_supernode, self.supernode_parent_map, self.supernode_map, self.dom_tree, self.super_node)
         keys_to_delete = [k for k, v in new_trace.items() if v == []]
         for k in keys_to_delete:
             del new_trace[k]
-        
         return new_trace
     
 

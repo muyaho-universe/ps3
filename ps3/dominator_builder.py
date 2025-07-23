@@ -47,7 +47,7 @@ def build_dominator_tree(cfg, target_func_name):
 
 def merge_nodes(nodes):
     parent = {}
-    
+    # TODO: CVE-2021-23841 target 병합 실패 이유 찾기
     def find(x):
         while parent.get(x, x) != x:
             x = parent[x]

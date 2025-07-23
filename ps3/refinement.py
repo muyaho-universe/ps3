@@ -157,7 +157,7 @@ def single_refine(myself: dict[(InspectInfo, bool):list[InspectInfo]]) -> dict[(
     old_myself = deepcopy(myself)
     my_effects = {}
     for key, value in myself.items():
-        if key != ("None", False):
+        if key != ("None", False) and not str(key[0]).startswith("IndirectJump"):
             key_info = key[0] 
             old_key = deepcopy(key_info)
             new_key_info = rebuild_effects(key_info)
@@ -346,7 +346,7 @@ def rebuild_effects(effect: InspectInfo) -> InspectInfo:
     """
     InspectInfo를 받아서, str 형태 그대로 최소화된 effect로 변환합니다.
     """
-    if str(effect) == "None":
+    if str(effect) == "None" or "IndirectJump" in str(effect):
         return effect
 
     original_str = str(effect).replace('\n', '').strip()

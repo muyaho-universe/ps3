@@ -2,7 +2,7 @@ import time
 from dataset_processer import Dataset, Evaluator, TestJson, TestResult
 from debug_parser import DebugParser2
 from diff_parser import DiffParser
-from simulator import Generator, Signature, Test, valid_sig
+from simulator import Generator, Signature, Test, remove_duplicate, valid_sig
 # from original_simulator import Generator, Signature, Test, valid_sig
 from inspect_info import InspectInfo
 from effect import Effect
@@ -108,6 +108,8 @@ def run_one(tests: list[TestJson]) -> list[TestResult]:
         sig = sigs[funcname]
         if len(sig) > 1:
             sigs[funcname] = valid_sig(sig)
+        sig = sigs[funcname]
+        sigs[funcname] = remove_duplicate(sig)
         for s in sigs[funcname]:
             s.show()
 

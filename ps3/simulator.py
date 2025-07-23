@@ -37,7 +37,7 @@ sys.setrecursionlimit(10000)
 def hexl(l):
     return [hex(x) for x in l]
 
-def _update_new_trace(trace, temp_supernode, supernode_parent_map, supernode_map, dom_tree, super_node):
+def _update_new_trace(trace, temp_supernode, supernode_parent_map, supernode_map, dom_tree, super_node, indirect_jumps):
     """
     trace, temp_supernode, supernode_parent_map, supernode_map, dom_tree를 받아
     new_trace를 업데이트하는 공통 로직을 함수로 분리
@@ -117,6 +117,21 @@ def _update_new_trace(trace, temp_supernode, supernode_parent_map, supernode_map
                                             new_trace[(t, is_true_branch)].extend(item)
                                         i = clean(new_trace[(t, is_true_branch)])
                                         new_trace[(t, is_true_branch)] = i
+    # indirect jump 처리
+    for origin in trace.keys():
+        if origin in indirect_jumps:
+            for target in trace.keys():
+                if target in indirect_jumps[origin]:
+                    # origin -> target이 indirect jump로 연결되어 있다면
+                    # origin의 trace를 target의 trace에 추가
+                    key = (f"IndirectJump-{indirect_jumps[origin][target]}", True)
+                    if key not in new_trace:
+                        new_trace[key] = []
+                    for _, item in trace[target].items():
+                        new_trace[key].extend(item)
+                    i = clean(new_trace[key])
+                    new_trace[key] = i
+    print(f"new_trace: {new_trace}")
     return new_trace
 
 
@@ -156,45 +171,32 @@ class Simulator:
         self.funcname = funcname
         cfg = self.proj.analyses.CFGFast(
             regions=[(symbol.rebased_addr, symbol.rebased_addr + symbol.size)], normalize=True, resolve_indirect_jumps=True)
-        
+        self.indirect_jumps = {}
         # ijr = indirect_jump_resolvers.IndirectJumpResolver(cfg=cfg)
         # ijr.resolve()
         # print(f"ijr: {len(ijr.indirect_jumps)} indirect jumps resolved")
         for k, v in cfg.indirect_jumps.items():
-            print(f"IndirectJump {hex(k)}:")
-            print(f"IndirectJump addr: {hex(v.addr)}")
-            print(f"Jump table address: {hex(v.jumptable) if v.jumptable else None}")
-            print(f"Jump table entries: {hexl(v.jumptable_entries)}")
-            print(f"Resolved targets: {hexl(v.resolved_targets)}")
-            print(f"Instruction address: {hex(v.ins_addr)}")
-            print(f"Jump kind: {v.jumpkind}")
-            # print(f"parsed: {v.parse()}")
-            # print(f"parse_from_cmessage: {v.parse_from_cmessage()}")
-            # print(f"serialized: {v.serialize()}")
-            # print(f"serialized_to_cmessage: {v.serialize_to_cmessage()}")
-            print(f"stmt_idx: {v.stmt_idx}")
-            print(f"All attributes: {dir(v)}")
-        for node in cfg.graph.nodes:
-            for succ, jumpkind in node.successors_and_jumpkinds():
-                print(f"{hex(node.addr)} -> {hex(succ.addr)} ({jumpkind})")
+            # k는 indirect jump가 있는 블록의 주소
+            if k not in self.indirect_jumps:
+                self.indirect_jumps[k] = {}
+            # print(f"k: {hex(k)}")
+            for idx, target in enumerate(v.jumptable_entries):
+                if target not in self.indirect_jumps[k]:
+                    self.indirect_jumps[k][target] = idx
+        # print(f"indirect_jumps: {self.indirect_jumps}")
+        
         function = None
         for func in cfg.functions:
             if cfg.functions[func].name == funcname:
                 function = cfg.functions[func]
                 break
-        for block in function.blocks:
-            if block.addr == 0x72b7de:
-                print(f"block.vex: {block.vex}")
-                print(f"block.addr: {hex(block.addr)}")
-                print(f"block.instruction_addrs: {hexl(block.instruction_addrs)}")
-        
         assert function is not None
         self.graph = cfg.graph
         self.cfg = cfg
         self.dom_tree, self.super_node = dominator_builder.build_dominator_tree(cfg, funcname)
         # print(f"self.parent_info: {self.parent_info}")
-        dominator_builder.print_dom_tree(self.dom_tree, symbol.rebased_addr, labels=None)
-        exit(0)
+        # dominator_builder.print_dom_tree(self.dom_tree, symbol.rebased_addr, labels=None)
+    
         self.function = function
         self._init_map()
 
@@ -215,7 +217,6 @@ class Simulator:
                 if addr not in self.addr2IR:
                     self.addr2IR[addr] = []
                 self.addr2IR[addr].append(stmtwrapper)
-        exit(0)
         for node in self.graph.nodes:
             self.node2IR[node] = []
             addrs = node.instruction_addrs
@@ -361,19 +362,6 @@ class Simulator:
                                             exit(0)
                                     else:
                                         new_collect[key].append(item)
-                            #    for _, item in collect[k].items():
-                            #        if key not in new_collect:
-                            #            new_collect[key] = []
-                                    # item이 리스트가 아닐 수도 있으니 리스트로 변환
-                            #        if isinstance(item, list):
-                            #            new_collect[key].extend(item)
-                            #        else:
-                            #            new_collect[key].append(item)
-                                # print(f"new_collect: {new_collect}"
-                                    
-                                # i = clean(new_collect[key])
-                                # i = new_collect[key]
-                                # new_collect[key] = i
         return new_collect
 
     def get_supernode_for_addresses(self, addresses: list[int]) -> dict[int, int]:
@@ -491,8 +479,8 @@ class Simulator:
                 for parent_addr in self.address_parent[addr]:
                         if parent_addr not in self.inspect_addrs:
                             self.inspect_addrs.append(parent_addr)
-        print(f"addresses: {hexl(addresses)}")
-        print(f"self.inspect_addrs: {hexl(self.inspect_addrs)}")
+        # print(f"addresses: {hexl(addresses)}")
+        # print(f"self.inspect_addrs: {hexl(self.inspect_addrs)}")
         queue = [init_state]
         visit = set()
         while len(queue) > 0:  # DFS
@@ -517,8 +505,6 @@ class Simulator:
             #     visit.update(result.addrs)
             #     trace.update(result.inspect)
             #     queue.append(result)
-        print(f"trace: {trace}")
-        exit(0)
         # trace를 parent-child 관계로 변환
         for parent, child in self.dom_tree.edges():
             # print(f"parent: {hex(parent)}, child: {hex(child)}")
@@ -557,7 +543,7 @@ class Simulator:
                 temp_supernode[v].append(k)
 
         # 기존 중복 코드 대신 함수 호출로 대체
-        new_trace = _update_new_trace(trace, temp_supernode, self.supernode_parent_map, self.supernode_map, self.dom_tree, self.super_node)
+        new_trace = _update_new_trace(trace, temp_supernode, self.supernode_parent_map, self.supernode_map, self.dom_tree, self.super_node, self.indirect_jumps)
         keys_to_delete = [k for k, v in new_trace.items() if v == []]
         for k in keys_to_delete:
             del new_trace[k]
@@ -572,7 +558,7 @@ class Simulator:
                 # print(f"statement: {statement}, type: {type(statement)}, in self.inspect_addrs: {machine_addr in self.inspect_addrs}")
                 if machine_addr in self.inspect_addrs:
                     # print(f"machine_addr: {hex(machine_addr)}")
-                    print(f"statement: {statement}, type: {type(statement)}")
+                    # print(f"statement: {statement}, type: {type(statement)}")
                     if isinstance(statement, stmt.Exit):
                         dst = statement.stmt.dst.value
                         self.from_to.append((state.node.addr, dst))
@@ -844,6 +830,21 @@ def valid_sig(sigs: list[Signature]):
         return new_sigs
     return sigs
 
+def remove_duplicate(sigs: list[Signature]):
+    # 
+    for sig in sigs:
+        if sig.state == "modify":
+            remove, add = sig.collect[0], sig.collect[1]
+            temp_remove, temp_add = deepcopy(remove), deepcopy(add)
+            for rk, rv in temp_remove.items():
+                if rk in temp_add:
+                    for one_rv in rv:
+                        if one_rv in temp_add[rk]:
+                            add[rk].remove(one_rv)
+                            remove[rk].remove(one_rv)
+            sig.collect[0] = remove
+            sig.collect[1] = add
+    return sigs
 
 def handle_pattern(patterns: Patterns | list[Patterns]) -> dict:
     # print("in handle_pattern")

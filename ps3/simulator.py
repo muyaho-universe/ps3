@@ -47,9 +47,12 @@ def _update_new_trace(trace, temp_supernode, supernode_parent_map, supernode_map
         if k in supernode_parent_map:
             parent = supernode_parent_map[k]
             k_top = supernode_map[k]
+           
+                
             if parent is None:
                 key = ("None", False)
-                new_trace[key] = []
+                if key not in new_trace:
+                    new_trace[key] = []
                 for _, item in trace[k].items():
                     new_trace[key].extend(item)
                 i = clean(new_trace[key])
@@ -131,7 +134,6 @@ def _update_new_trace(trace, temp_supernode, supernode_parent_map, supernode_map
                         new_trace[key].extend(item)
                     i = clean(new_trace[key])
                     new_trace[key] = i
-    print(f"new_trace: {new_trace}")
     return new_trace
 
 
@@ -311,8 +313,13 @@ class Simulator:
             else:  # state run to the end
                 visit.update(result.addrs)
                 collect.update(result.inspect)
+        # print(f"reduce_addr: {reduce_addr}")
         # print(f"collect: {collect}")
-        
+        # print(f"self.supernode_parent_map: {self.supernode_parent_map}")
+        # print(f"self.address_parent: {self.address_parent}")
+        # print(f"self.super_node: {self.super_node}")
+        # print(f"self.supernode_map: {self.supernode_map}")
+        # exit(0)
         for parent, child in self.dom_tree.edges():
             # print(f"parent: {parent}, child: {child}")
             # print(f"from_to: {self.from_to}")
@@ -323,45 +330,19 @@ class Simulator:
             is_true_branch = self.dom_tree[parent][child].get('true_branch', False)
             # print(f"0x{parent:x} -> 0x{child:x}, true_branch: {is_true_branch}")
         # print(f"collect: {collect}")
-        new_collect = {}
+        temp_supernode = {}
         for k in collect.keys():
-            if k in self.supernode_parent_map:
-                parent = self.supernode_parent_map[k]
-                k_top = self.supernode_map[k]
-                if parent is None:
-                    key = ("None", False)
-                    new_collect[key] = []
-                    for _, item in collect[k].items():
-                        new_collect[key].extend(item)
-                    # i = clean(new_collect[(t, False)])
-                    # i = new_collect[key]
-                    # new_collect[key] = i
-                else:
-                    is_true_branch = self.dom_tree[parent][k_top].get('true_branch', False)
-                    # trace[parent]를 순회해서 Condition 만 가져오기 (Condition, true_branch 여부)
-                    for _, traces in collect[parent].items():
-                        for t in traces:
-                            if isinstance(t, InspectInfo) and isinstance(t.ins, Effect.Condition):
-                                key = (t, is_true_branch)
-                                
-                                # parent_cond = t
-                                # key = (t, is_true_branch)
-                                
-                                new_collect.setdefault(key, [])
-                                # if key not in list(new_collect.keys()):
-                                #     new_collect[key] = []
-                                for _, item in collect.get(k, {}).items():
-                                    # print(f"Trying to access key: {key}")
-                                    # print(f"Current keys: {list(new_collect.keys())}")
-                                    if isinstance(item, list):
-                                        try:
-                                            new_collect[key].extend(item)
-                                        except Exception as e:
-                                            print(f"Trying to access key: {key}")
-                                            print(f"Current keys: {list(new_collect.keys())}")
-                                            exit(0)
-                                    else:
-                                        new_collect[key].append(item)
+            if k in self.supernode_map:
+                supernode = self.supernode_map[k]
+                if supernode not in temp_supernode:
+                    temp_supernode[supernode] = []
+                temp_supernode[supernode].append(k)
+            else:
+                # print(f"key {k} not in supernode_map")
+                pass
+        new_collect = {}
+        new_collect = _update_new_trace(collect, temp_supernode, self.supernode_parent_map, self.supernode_map, self.dom_tree, self.super_node, self.indirect_jumps)
+
         return new_collect
 
     def get_supernode_for_addresses(self, addresses: list[int]) -> dict[int, int]:
@@ -957,7 +938,7 @@ def clean(collect):
         # elif site.ins[0] == "Store":
         elif isinstance(effect, Effect.Store):
             # string = str(site.ins[2])
-            string = str(site).split("Store: ")[-1].split("= ")[-1].strip()
+            string = str(site).split("Store: ")[-1].strip()
             if string in others:
                 collect.remove(site)
                 continue
@@ -975,7 +956,7 @@ def clean(collect):
         # elif site.ins[0] == "Put":
         elif isinstance(effect, Effect.Put):
             # string = str(site.ins[2])
-            string = str(site).split("Put: ")[-1].split("= ")[-1].strip()
+            string = str(site).split("Put: ")[-1].strip()
             # FakeRet with name, we cannot remove it
             if "FakeRet" in string and len(string) > len("FakeRet()"):
                 continue

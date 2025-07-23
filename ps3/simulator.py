@@ -127,12 +127,13 @@ def _update_new_trace(trace, temp_supernode, supernode_parent_map, supernode_map
                 if target in indirect_jumps[origin]:
                     # origin -> target이 indirect jump로 연결되어 있다면
                     # origin의 trace를 target의 trace에 추가
-                    key = (f"IndirectJump-{indirect_jumps[origin][target]}", True)
-                    if key not in new_trace:
-                        new_trace[key] = []
-                    for _, item in trace[target].items():
-                        new_trace[key].extend(item)
-                    i = clean(new_trace[key])
+                    for i in indirect_jumps[origin][target]:
+                        key = (f"IndirectJump-{i}", True)
+                        if key not in new_trace:
+                            new_trace[key] = []
+                        for _, item in trace[target].items():
+                            new_trace[key].extend(item)
+                        i = clean(new_trace[key])
                     new_trace[key] = i
     return new_trace
 
@@ -184,7 +185,9 @@ class Simulator:
             # print(f"k: {hex(k)}")
             for idx, target in enumerate(v.jumptable_entries):
                 if target not in self.indirect_jumps[k]:
-                    self.indirect_jumps[k][target] = idx
+                    self.indirect_jumps[k][target] = [idx]
+                else:
+                    self.indirect_jumps[k][target].append(idx)
         # print(f"indirect_jumps: {self.indirect_jumps}")
         
         function = None

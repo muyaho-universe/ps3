@@ -154,17 +154,65 @@ class Simulator:
         # ijr = indirect_jump_resolvers.IndirectJumpResolver(cfg=cfg)
         # ijr.resolve()
         # print(f"ijr: {len(ijr.indirect_jumps)} indirect jumps resolved")
+        self.indirect_jumps_related_addrs = set()
         for k, v in cfg.indirect_jumps.items():
             # k는 indirect jump가 있는 블록의 주소
+            self.indirect_jumps_related_addrs.add(k)
             if k not in self.indirect_jumps:
                 self.indirect_jumps[k] = {}
             if v.jumptable_entries is None:
                 continue
             for idx, target in enumerate(v.jumptable_entries):
+                self.indirect_jumps_related_addrs.add(target)
+                # target은 indirect jump가 가리키는 주소
                 if target not in self.indirect_jumps[k]:
                     self.indirect_jumps[k][target] = [idx]
                 else:
                     self.indirect_jumps[k][target].append(idx)
+        # print(f"indirect_jumps: {self.indirect_jumps}")
+        
+        function = None
+        for func in cfg.functions:
+            if cfg.functions[func].name == funcname:
+                function = cfg.functions[func]
+                break
+        assert function is not None
+        self.graph = cfg.graph
+        self.cfg = cfg
+        self.dom_tree, self.super_node = dominator_builder.build_dominator_tree(cfg, funcname)
+        # print(f"self.parent_info: {self.parent_info}")
+        # dominator_builder.print_dom_tree(self.dom_tree, symbol.rebased_addr, labels=None)
+    
+        self.function = function
+        self._init_map()
+
+    def _init_function_for_all(self, funcname: str, sig_has_indirect_jump: bool):
+        symbol = self.proj.loader.find_symbol(funcname)
+
+        if symbol is None:
+            raise FunctionNotFound(
+                f"symbol {funcname} not found in binary {self.proj}")
+        self.funcname = funcname
+        cfg = self.proj.analyses.CFGFast(
+            regions=[(symbol.rebased_addr, symbol.rebased_addr + symbol.size)], normalize=True, resolve_indirect_jumps=sig_has_indirect_jump)
+        self.indirect_jumps = {}
+        if sig_has_indirect_jump:
+            # ijr = indirect_jump_resolvers.IndirectJumpResolver(cfg=cfg)
+            # ijr.resolve()
+            # print(f"ijr: {len(ijr.indirect_jumps)} indirect jumps resolved")
+            
+            for k, v in cfg.indirect_jumps.items():
+                # k는 indirect jump가 있는 블록의 주소
+                if k not in self.indirect_jumps:
+                    self.indirect_jumps[k] = {}
+                if v.jumptable_entries is None:
+                    continue
+                for idx, target in enumerate(v.jumptable_entries):
+                    # target은 indirect jump가 가리키는 주소
+                    if target not in self.indirect_jumps[k]:
+                        self.indirect_jumps[k][target] = [idx]
+                    else:
+                        self.indirect_jumps[k][target].append(idx)
         # print(f"indirect_jumps: {self.indirect_jumps}")
         
         function = None
@@ -264,8 +312,8 @@ class Simulator:
                     break
         return result
 
-    def generate_forall_bb(self, funcname: str, dic) -> dict:
-        self._init_function(funcname)
+    def generate_forall_bb(self, funcname: str, dic, sig_has_indirect_jump: bool) -> dict:
+        self._init_function_for_all(funcname, sig_has_indirect_jump)
 
         all_addrs = []
         collect = {}
@@ -442,6 +490,12 @@ class Simulator:
                             self.inspect_addrs.append(parent_addr)
         # print(f"addresses: {hexl(addresses)}")
         # print(f"self.inspect_addrs: {hexl(self.inspect_addrs)}")
+        has_indirect_jump = False
+        for addr in self.inspect_addrs:
+            if addr in self.indirect_jumps_related_addrs:
+                has_indirect_jump = True
+                break
+
         queue = [init_state]
         visit = set()
         while len(queue) > 0:  # DFS
@@ -508,7 +562,7 @@ class Simulator:
         keys_to_delete = [k for k, v in new_trace.items() if v == []]
         for k in keys_to_delete:
             del new_trace[k]
-        return new_trace
+        return new_trace, has_indirect_jump
     
 
     def _simulateBB(self, state: State, step_one=False) -> list[State] | State:
@@ -850,18 +904,18 @@ class Generator:
             if state == "vuln":
                 addresses = [
                     addr + self.vuln_proj.proj.loader.main_object.min_addr for addr in addresses]
-                collect = self.vuln_proj.generate(
+                collect, vuln_has_indirect_jump = self.vuln_proj.generate(
                     funcname, addresses, patterns_)
             elif state == "patch":
                 addresses = [
                     addr + self.patch_proj.proj.loader.main_object.min_addr for addr in addresses]
-                collect = self.patch_proj.generate(
+                collect, patch_has_indirect_jump = self.patch_proj.generate(
                     funcname, addresses, patterns_)
             else:
                 raise NotImplementedError(f"{state} is not considered.")
         except FunctionNotFound:
             return None
-        return collect
+        return collect, vuln_has_indirect_jump if state == "vuln" else patch_has_indirect_jump
 
 def extract_collect(addresses: dict, collect:dict, info:list) -> dict:
     new_collect = {}
@@ -1005,7 +1059,7 @@ class Test:
     def __init__(self, sigs: dict[str, list[Signature]]) -> None:
         self.sigs = sigs
 
-    def test_path(self, binary_path: str) -> str:
+    def test_path(self, binary_path: str, ground_truth: str, has_indirect_jump: bool) -> str:
         try:
             project = angr.Project(binary_path)
             simulator = Simulator(project)
@@ -1014,10 +1068,10 @@ class Test:
             print(f"Error testing path: {e}")
 
         
-        return self.test_project(simulator)
+        return self.test_project(simulator, ground_truth, has_indirect_jump)
 
 
-    def test_project(self, simulator: Simulator) -> str:
+    def test_project(self, simulator: Simulator, ground_truth: str, has_indirect_jump: bool) -> str:
         # if one think it's vuln, then it is vuln
         exist_patch = False
         results = []
@@ -1028,7 +1082,7 @@ class Test:
             # funcname = "ssl3_get_record"
             # simulator = Simulator(simulator.proj)
             # sigs = [<simulator.Signature object at 0x7fafd1f517e0>]
-            result = self.test_func(funcname, simulator, sigs)
+            result = self.test_func(funcname, simulator, sigs, ground_truth, has_indirect_jump)
             # print(f"result: {result}")
             # time.sleep(10)
             if result == "vuln":
@@ -1069,7 +1123,7 @@ class Test:
                 raise NotImplementedError(f"{type(ins)} is not considered.")
         return l
 
-    def test_func(self, funcname: str, simulator: Simulator, sigs: list[Signature]) -> str:
+    def test_func(self, funcname: str, simulator: Simulator, sigs: list[Signature], ground_truth: str, sig_has_indirect_jump: bool) -> str:
         dic = {}
         
         for sig in sigs:
@@ -1077,7 +1131,7 @@ class Test:
             # print(f'{sig.funcname} {sig.state} {sig.patterns}') # ssl3_get_record modify [Patterns(patterns=[]), Patterns(patterns=[])]
             # time.sleep(10)
         try:
-            traces: dict = simulator.generate_forall_bb(funcname, dic)
+            traces: dict = simulator.generate_forall_bb(funcname, dic, sig_has_indirect_jump)
             # print(f"traces: {traces}")
             # exit(0)
             # time.sleep(10)

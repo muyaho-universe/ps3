@@ -54,33 +54,40 @@ def run_one(tests: list[TestJson]) -> list[TestResult]:
     for diffs in binary_diffs:
         funcname = diffs.funcname
         sigs[funcname] = []
+        vuln_has_indirect_jump = None
+        patch_has_indirect_jump = None
+        has_indirect_jump = False
         for hunk in diffs.hunks:
             # print(f"{funcname} {hunk.type}")
             if hunk.type == "add":
-                collect = signature_generator.generate(
+                collect, patch_has_indirect_jump = signature_generator.generate(
                     funcname, hunk.add, "patch", hunk.add_pattern)
                 if collect is None:
                     continue
                 signature = Signature.from_add(
                     collect, funcname, "patch", hunk.add_pattern)
                 sigs[funcname].append(signature)
+                if patch_has_indirect_jump and not has_indirect_jump:
+                    has_indirect_jump = True
 
             elif hunk.type == "remove":
-                collect = signature_generator.generate(
+                collect, vuln_has_indirect_jump = signature_generator.generate(
                     funcname, hunk.remove, "vuln", hunk.remove_pattern)
                 if collect is None:
                     continue
                 signature = Signature.from_remove(
                     collect, funcname, "vuln", hunk.remove_pattern)
                 sigs[funcname].append(signature)
+                if vuln_has_indirect_jump and not has_indirect_jump:
+                    has_indirect_jump = True
             elif hunk.type == "modify":
-                collect_patch = signature_generator.generate(
+                collect_patch, patch_has_indirect_jump = signature_generator.generate(
                     funcname, hunk.add, "patch", hunk.add_pattern)
                 # exit(0)
                 # print("=" * 20)
-                collect_vuln = signature_generator.generate(
+                collect_vuln, vuln_has_indirect_jump = signature_generator.generate(
                     funcname, hunk.remove, "vuln", hunk.remove_pattern)
-            
+                
 
                 # print(f"before refine collect_patch: {collect_patch}")
                 # print(f"before refine collect_vuln: {collect_vuln}")
@@ -95,6 +102,8 @@ def run_one(tests: list[TestJson]) -> list[TestResult]:
                 signature = Signature.from_modify(
                     collect_vuln, collect_patch, funcname, hunk.add_pattern, hunk.remove_pattern)
                 sigs[funcname].append(signature)
+                if (patch_has_indirect_jump or vuln_has_indirect_jump) and not has_indirect_jump:
+                    has_indirect_jump = True
                 # print(f"signature: {signature}")
             else:
                 raise ValueError("hunk type error")
@@ -120,7 +129,7 @@ def run_one(tests: list[TestJson]) -> list[TestResult]:
         for test in tests:
             if test.ground_truth == "patch":
                 one_result = testor.test_path(
-                    f"{BINARY_PATH}/{test.project}/{test.file}")
+                    f"{BINARY_PATH}/{test.project}/{test.file}", test.ground_truth, has_indirect_jump)
                 if one_result is None:
                     continue
                 logger.info(
@@ -131,7 +140,7 @@ def run_one(tests: list[TestJson]) -> list[TestResult]:
         for test in tests:
             if test.ground_truth == "vuln":
                 one_result = testor.test_path(
-                    f"{BINARY_PATH}/{test.project}/{test.file}")
+                    f"{BINARY_PATH}/{test.project}/{test.file}", test.ground_truth, has_indirect_jump)
                 if one_result is None:
                     continue
                 logger.info(
@@ -144,7 +153,7 @@ def run_one(tests: list[TestJson]) -> list[TestResult]:
         start = time.time()
         logger.info(f"\n{test.file} truth is {test.ground_truth}")
         one_result = testor.test_path(
-            f"{BINARY_PATH}/{test.project}/{test.file}")
+            f"{BINARY_PATH}/{test.project}/{test.file}", test.ground_truth, has_indirect_jump)
         if one_result is None:
             with open("error_test.txt", "a") as f:
                 f.write(f"{test} is not valid")

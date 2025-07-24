@@ -158,7 +158,8 @@ class Simulator:
             # k는 indirect jump가 있는 블록의 주소
             if k not in self.indirect_jumps:
                 self.indirect_jumps[k] = {}
-            # print(f"k: {hex(k)}")
+            if v.jumptable_entries is None:
+                continue
             for idx, target in enumerate(v.jumptable_entries):
                 if target not in self.indirect_jumps[k]:
                     self.indirect_jumps[k][target] = [idx]

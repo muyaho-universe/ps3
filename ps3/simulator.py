@@ -42,99 +42,75 @@ def _update_new_trace(trace, temp_supernode, supernode_parent_map, supernode_map
     trace, temp_supernode, supernode_parent_map, supernode_map, dom_tree를 받아
     new_trace를 업데이트하는 공통 로직을 함수로 분리
     """
+    def add_items_to_new_trace(key, items):
+        if key not in new_trace:
+            new_trace[key] = []
+        for _, item in items:
+            new_trace[key].extend(item)
+        new_trace[key] = clean(new_trace[key])
+
     new_trace = {}
+
     for k in trace.keys():
+        # 1. supernode_parent_map에 있는 경우
         if k in supernode_parent_map:
             parent = supernode_parent_map[k]
             k_top = supernode_map[k]
-           
-                
             if parent is None:
                 key = ("None", False)
-                if key not in new_trace:
-                    new_trace[key] = []
-                for _, item in trace[k].items():
-                    new_trace[key].extend(item)
-                i = clean(new_trace[key])
-                new_trace[key] = i
+                add_items_to_new_trace(key, trace[k].items())
             else:
                 is_true_branch = dom_tree[parent][k_top].get('true_branch', False)
-                # trace[parent]를 순회해서 Condition 만 가져오기 (Condition, true_branch 여부)
                 for _, traces in trace[parent].items():
                     for t in traces:
                         if isinstance(t, InspectInfo) and isinstance(t.ins, Effect.Condition):
-                            # print(f"Condition: {t.effect.condition}, true_branch: {is_true_branch}")
-                            # parent_cond = t
-                            new_trace[(t, is_true_branch)] = []
-                            for _, item in trace[k].items():
-                                new_trace[(t, is_true_branch)].extend(item)
-                            i = clean(new_trace[(t, is_true_branch)])
-                            new_trace[(t, is_true_branch)] = i
-        else:
-            if k in temp_supernode:
-                for real_key in temp_supernode[k]:
+                            key = (t, is_true_branch)
+                            add_items_to_new_trace(key, trace[k].items())
+        # 2. temp_supernode에 있는 경우
+        elif k in temp_supernode:
+            for real_key in temp_supernode[k]:
+                parent = supernode_parent_map[real_key]
+                k_top = supernode_map[real_key]
+                if parent is None:
+                    key = ("None", False)
+                    add_items_to_new_trace(key, trace[k].items())
+                else:
+                    is_true_branch = dom_tree[parent][k_top].get('true_branch', False)
+                    for _, traces in trace[parent].items():
+                        for t in traces:
+                            if isinstance(t, InspectInfo) and isinstance(t.ins, Effect.Condition):
+                                key = (t, is_true_branch)
+                                add_items_to_new_trace(key, trace[k].items())
+        # 3. super_node에 있는 경우 (보통 단일 함수 블럭)
+        elif k in super_node:
+            new_k = super_node[k]
+            # print(f"k: {hex(k)}, new_k: {hex(new_k)} in super_node")
+            if new_k in temp_supernode:
+                for real_key in temp_supernode[new_k]:
                     parent = supernode_parent_map[real_key]
                     k_top = supernode_map[real_key]
                     if parent is None:
                         key = ("None", False)
-                        new_trace[key] = []
-                        for _, item in trace[k].items():
-                            new_trace[key].extend(item)
-                        i = clean(new_trace[key])
-                        new_trace[key] = i
+                        add_items_to_new_trace(key, trace[k].items())
                     else:
                         is_true_branch = dom_tree[parent][k_top].get('true_branch', False)
-                        # trace[parent]를 순회해서 Condition 만 가져오기 (Condition, true_branch 여부)
                         for _, traces in trace[parent].items():
                             for t in traces:
                                 if isinstance(t, InspectInfo) and isinstance(t.ins, Effect.Condition):
-                                    # print(f"Condition: {t.effect.condition}, true_branch: {is_true_branch}")
-                                    new_trace[(t, is_true_branch)] = []
-                                    for _, item in trace[k].items():
-                                        new_trace[(t, is_true_branch)].extend(item)
-                                    i = clean(new_trace[(t, is_true_branch)])
-                                    new_trace[(t, is_true_branch)] = i
-            elif k in super_node:
-                # super_node에 있는 경우. 보통 단일 함수 블럭
-                new_k = super_node[k]
-                if new_k in temp_supernode:
-                    for real_key in temp_supernode[new_k]:
-                        parent = supernode_parent_map[real_key]
-                        k_top = supernode_map[real_key]
-                        if parent is None:
-                            key = ("None", False)
-                            new_trace[key] = []
-                            for _, item in trace[k].items():
-                                new_trace[key].extend(item)
-                            i = clean(new_trace[key])
-                            new_trace[key] = i
-                        else:
-                            is_true_branch = dom_tree[parent][k_top].get('true_branch', False)
-                            # trace[parent]를 순회해서 Condition 만 가져오기 (Condition, true_branch 여부)
-                            for _, traces in trace[parent].items():
-                                for t in traces:
-                                    if isinstance(t, InspectInfo) and isinstance(t.ins, Effect.Condition):
-                                        # print(f"Condition: {t.effect.condition}, true_branch: {is_true_branch}")
-                                        new_trace[(t, is_true_branch)] = []
-                                        for _, item in trace[k].items():
-                                            new_trace[(t, is_true_branch)].extend(item)
-                                        i = clean(new_trace[(t, is_true_branch)])
-                                        new_trace[(t, is_true_branch)] = i
+                                    key = (t, is_true_branch)
+                                    add_items_to_new_trace(key, trace[k].items())
+
     # indirect jump 처리
     for origin in trace.keys():
         if origin in indirect_jumps:
             for target in trace.keys():
                 if target in indirect_jumps[origin]:
-                    # origin -> target이 indirect jump로 연결되어 있다면
-                    # origin의 trace를 target의 trace에 추가
                     for i in indirect_jumps[origin][target]:
                         key = (f"IndirectJump-{i}", True)
-                        if key not in new_trace:
-                            new_trace[key] = []
-                        for _, item in trace[target].items():
-                            new_trace[key].extend(item)
-                        i = clean(new_trace[key])
-                    new_trace[key] = i
+                        add_items_to_new_trace(key, trace[target].items())
+    for k, v in new_trace.items():
+        v = set(v)
+        new_trace[k] = list(v)
     return new_trace
 
 
@@ -370,7 +346,7 @@ class Simulator:
         """
         각 address의 super node의 dominator tree상 parent(super node) block의 node head address를 반환합니다.
         :param addresses: 확인할 address 리스트
-        :return: {address: parent_supernode_addr or None} 딕셔너리
+        :return: {address: parent_supernode_addr or None} 딕셔리
         """
         # supernode_map: address -> supernode_addr
         # dom_tree: supernode_addr(parent) -> supernode_addr(child)

@@ -460,30 +460,10 @@ def to_z3_true(expr: pe.IRExpr | pc.IRConst | int) -> z3.ExprRef:
 def simplify_z3(expr):
     return z3.simplify(expr)
 
-# def equal_z3(expr1, expr2):
-#     expr1_simplify = simplify_z3(expr1)
-#     expr2_simplify = simplify_z3(expr2)
-#     result = z3.eq(expr1_simplify, expr2_simplify)
-#     if result:
-#         return True
-#     else:
-#         # use prove to check if the two expr are equal semanticly
-#         if 'If' in str(expr1_simplify) and 'If' in str(expr2_simplify):
-#             try:
-#                 return prove(expr1_simplify == expr2_simplify)
-#             except Exception:
-#                 return False
-#         return False
-
 def equal_z3(expr1, expr2):
-    # print("in equal_z3")
-    # print(f"expr1: {expr1}, {type(expr1)}")
-    # print(f"expr2: {expr2}, {type(expr2)}")
     expr1_simplify = simplify_z3(expr1)
     expr2_simplify = simplify_z3(expr2)
     result = z3.eq(expr1_simplify, expr2_simplify)
-    # print(f"expr1_simplify: {expr1_simplify}")
-    # print(f"expr2_simplify: {expr2_simplify}")
     if result:
         return True
     else:
@@ -494,34 +474,6 @@ def equal_z3(expr1, expr2):
             except Exception:
                 return False
         return False
-
-# def equal_z3(expr1, expr2):
-#     expr1_simplify = simplify_z3(expr1)
-#     expr2_simplify = simplify_z3(expr2)
-
-#     # fast path
-#     if expr1_simplify.eq(expr2_simplify):
-#         return True
-
-#     # check if 'T' appears
-#     vars1 = set(z3.z3util.get_vars(expr1_simplify))
-#     vars2 = set(z3.z3util.get_vars(expr2_simplify))
-#     all_vars = vars1 | vars2
-
-#     T_var = next((v for v in all_vars if str(v) == "T"), None)
-#     if T_var is not None:
-#         solver = z3.Solver()
-#         # ✅ try multiple concrete instantiations
-#         for concrete in [0, 1, 2]:
-#             solver.push()
-#             solver.add(T_var == z3.BitVecVal(concrete, 64))
-#             solver.add(expr1_simplify != expr2_simplify)
-#             if solver.check() == z3.unsat:
-#                 return True
-#             solver.pop()
-#         return False
-
-#     return prove(expr1_simplify == expr2_simplify)
     
 def show_equal_z3(expr1, expr2):
     print("in show_equal_z3")

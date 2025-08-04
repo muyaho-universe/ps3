@@ -41,9 +41,18 @@ class DebugParser:
                 if line.startswith('End of assembler dump.'):
                     i += 1
                     continue
+                if line.startswith('Address range'):
+                    # E.g. Address range: 0x0000000000400b20 - 0x0000000000400b30
+                    i += 1
+                    continue
                 tokens = line.strip().split()
                 if len(tokens) != 0:
-                    addr.append(int(tokens[0], 16))
+                    try:
+                        addr.append(int(tokens[0], 16))
+                    except ValueError:
+                        print(f'Unrecognized debug info line: {line}, tokens: {tokens}')
+                        print(f"debug_info: {debug_info}")
+                        exit(0)
                 i += 1
             # print("addr:", addr)
             dic = self._addr_from_lines(addr)

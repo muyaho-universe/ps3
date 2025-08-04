@@ -181,6 +181,7 @@ class Simulator:
         self.cfg = cfg
         self.dom_tree, self.super_node = dominator_builder.build_dominator_tree(cfg, funcname)
         # print(f"self.parent_info: {self.parent_info}")
+        # print("==" * 20)
         # dominator_builder.print_dom_tree(self.dom_tree, symbol.rebased_addr, labels=None)
     
         self.function = function
@@ -357,7 +358,6 @@ class Simulator:
         for parent, child in self.dom_tree.edges():
             is_true_branch = self.dom_tree[parent][child].get('true_branch', False)
             # print(f"0x{parent:x} -> 0x{child:x}, true_branch: {is_true_branch}")
-        # print(f"collect: {collect}")
         temp_supernode = {}
         for k in collect.keys():
             if k in self.supernode_map:
@@ -520,6 +520,7 @@ class Simulator:
             #     visit.update(result.addrs)
             #     trace.update(result.inspect)
             #     queue.append(result)
+        # print(f"trace: {trace}")
         # trace를 parent-child 관계로 변환
         for parent, child in self.dom_tree.edges():
             # print(f"parent: {hex(parent)}, child: {hex(child)}")
@@ -791,8 +792,10 @@ class Signature:
 
     def show(self) -> None:
         if self.state == "modify":
-            self._show(self.collect[0], "vuln")
-            self._show(self.collect[1], "patch")
+            if self.collect[0] is not None:
+                self._show(self.collect[0], "vuln")
+            if self.collect[1] is not None:
+                self._show(self.collect[1], "patch")
         else:
             self._show(self.collect, self.state)
 
@@ -857,8 +860,21 @@ def remove_duplicate(sigs: list[Signature]):
                         if one_rv in temp_add[rk]:
                             add[rk].remove(one_rv)
                             remove[rk].remove(one_rv)
-            sig.collect[0] = remove
-            sig.collect[1] = add
+            keys_to_del_remove = [k for k, v in remove.items() if not v]
+            for k in keys_to_del_remove:
+                del remove[k]
+            keys_to_del_add = [k for k, v in add.items() if not v]
+            for k in keys_to_del_add:
+                del add[k]
+            if remove == {}:
+                sig.collect[0] = None
+            else:
+                sig.collect[0] = remove
+            if add == {}:
+                sig.collect[1] = None
+            else:
+                sig.collect[1] = add
+
     return sigs
 
 def handle_pattern(patterns: Patterns | list[Patterns]) -> dict:
@@ -901,6 +917,7 @@ class Generator:
         # print("in Generator generate")
         patterns_ = handle_pattern(patterns)
         try:
+            # print(state)
             if state == "vuln":
                 addresses = [
                     addr + self.vuln_proj.proj.loader.main_object.min_addr for addr in addresses]
@@ -1149,7 +1166,7 @@ class Test:
                     vuln_effect = sig.collect
                     vuln_effect = single_refine(vuln_effect)
                     sig.refined_vuln = vuln_effect
-                    logger.info(f"refined vuln_effect: {vuln_effect}")
+                    # logger.info(f"refined vuln_effect: {vuln_effect}")
                 else:
                     vuln_effect = sig.refined_vuln
                 
@@ -1163,7 +1180,7 @@ class Test:
                     patch_effect = sig.collect
                     patch_effect = single_refine(patch_effect)
                     sig.refined_patch = patch_effect
-                    logger.info(f"refined patch_effect: {patch_effect}")
+                    # logger.info(f"refined patch_effect: {patch_effect}")
                 else:
                     patch_effect = sig.refined_patch
                 # print(f"refined patch_effect: {patch_effect}")
@@ -1179,42 +1196,8 @@ class Test:
                     vuln_effect, patch_effect = sig.collect[0], sig.collect[1] # vuln_effect, patch_effect는 dict 형태
                     vuln_effect = single_refine(vuln_effect)
                     patch_effect = single_refine(patch_effect)
-                    logger.info(f"refined vuln_effect: {vuln_effect}")
-                    logger.info(f"refined patch_effect: {patch_effect}")
-                    # for vuln_key, vuln_value in list(vuln_effect.items()):
-                        # for patch_key, patch_value in list(patch_effect.items()):
-                        #     # print(f"vuln_key: {vuln_key}, vuln_value: {vuln_value}")
-                        #     # print(f"patch_key: {patch_key}, patch_value: {patch_value}")
-                        #     old_vuln_key, old_patch_key = deepcopy(vuln_key[0]), deepcopy(patch_key[0])
-                        #     new_vuln_key, new_patch_key =  rebuild_effects(vuln_key[0]), rebuild_effects(patch_key[0])
-                        #     assert new_vuln_key == old_vuln_key, f"new_vuln_key {new_vuln_key} != old_vuln_key {old_vuln_key}"
-                        #     assert new_patch_key == old_patch_key, f"new_patch_key {new_patch_key} != old_patch_key {old_patch_key}"
-                        #     vuln_key, patch_key = (new_vuln_key, vuln_key[1]) , (new_patch_key, patch_key[1])
-                        #     if vuln_key == patch_key:
-                        #         # print(f"vuln_value: {vuln_value}, patch_value: {patch_value}")
-                        #         v, p = list(set(vuln_value) - set(patch_value)), list(set(patch_value) - set(vuln_value))
-                        #         # refinement
-                        #         if v and p:
-                        #             # both have values, refine them
-                        #                 refined_v, refined_p = refine_sig(v, p)
-                        #                 vuln_effect[vuln_key] = refined_v
-                        #                 patch_effect[patch_key] = refined_p
-                        #         elif v:
-                        #             # only vuln has values, refine vuln
-                        #             refined_v = single_refine(v)
-                        #             vuln_effect[vuln_key] = refined_v
-                        #             if patch_key in patch_effect:
-                        #                 del patch_effect[patch_key]
-                                    
-                        #         elif p:
-                        #             # only patch has values, refine patch
-                        #             refined_p = single_refine(p)
-                        #             patch_effect[patch_key] = refined_p
-                        #             if vuln_key in vuln_effect:
-                        #                 del vuln_effect[vuln_key]
-                        #         else:
-                        #             del vuln_effect[vuln_key]
-                        #             del patch_effect[patch_key]
+                    # logger.info(f"refined vuln_effect: {vuln_effect}")
+                    # logger.info(f"refined patch_effect: {patch_effect}")
 
                     sig.sig_dict["add"] = patch_effect
                     sig.sig_dict["remove"] = vuln_effect
@@ -1264,7 +1247,7 @@ class Test:
                 new_effects[k] = new_v
 
             all_effects = new_effects
-            logger.info(f"after rebuild all_effects: {all_effects}")
+            # logger.info(f"after rebuild all_effects: {all_effects}")
             
             
             test = False
@@ -1312,8 +1295,8 @@ class Test:
             if vuln_num >= patch_num:
                 return "vuln"
             result.append("patch" if patch_num > vuln_num else "vuln")
+        # print(result)
         if len(result) == 0:
-            print("result: None")
             return None
         # if one think it's vuln, then it is vuln
         if "vuln" in result:
@@ -1322,6 +1305,58 @@ class Test:
             return "patch"
         # if no vuln and patch, then it's vuln
         return "vuln"
+        #     if( patch_num == vuln_num) or (vuln_num == 0 and patch_num == 0):
+        #         if len(vuln_effect) != 0 and len(patch_effect) != 0:
+        #             logger.info(f"{funcname} {vuln_num} == {patch_num}, cannot determine")
+        #             if ground_truth == "patch":
+        #                 logger.info(f"result {result} cannot determine, return vuln")
+        #                 result.append("vuln")
+        #                 continue
+        #             else:
+        #                 logger.info(f"result {result} cannot determine, return patch")
+        #                 result.append("patch")
+        #                 continue
+        #         else:
+        #             continue
+        #     # if vuln_num >= patch_num:
+            
+        #     # if vuln_num == patch_num:
+        #     #     
+        #     if vuln_num > patch_num:
+        #         return "vuln"
+        #     result.append("patch" if patch_num > vuln_num else "vuln")
+        # # print(result)
+        # if len(result) == 0:
+        #     return None
+        # # if one think it's vuln, then it is vuln
+        # if "vuln" in result:
+        #     return "vuln"
+        # if "patch" in result:
+        #     return "patch"
+        # # if no match or same score, then always wrong
+        # if ground_truth == "patch":
+        #     logger.info(f"result {result} cannot determine, return patch")
+        #     return "vuln"
+        # else:
+        #     logger.info(f"result {result} cannot determine, return vuln")
+        #     return "patch"
+        #     if vuln_num == 0 and patch_num == 0:
+        #         continue
+        #     if patch_num == vuln_num:
+        #         continue
+        #     if vuln_num >= patch_num:
+        #         return "vuln"
+        #     result.append("patch" if patch_num > vuln_num else "vuln")
+        # if len(result) == 0:
+        #     print("result: None")
+        #     return None
+        # # if one think it's vuln, then it is vuln
+        # if "vuln" in result:
+        #     return "vuln"
+        # if "patch" in result:
+        #     return "patch"
+        # # if no vuln and patch, then it's vuln
+        # return "vuln"
         # return "patch"
 
 def effect_compare(effect, all_effects, result_type):

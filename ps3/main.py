@@ -26,108 +26,123 @@ COMPILERS = ["gcc", "clang"]
 # COMPILERS = ["clang"]
 OPT_LEVELS = ["O0", "O3"]  # O0, O1, O2, O3, Os, Ofast
 
-def run_one(tests: list[TestJson], compiler: str, opt_level: str) -> list[TestResult]:
+def generate_signatures(test: TestJson, diffparser:DiffParser) -> tuple[dict[str, dict[str, list[Signature]]], bool]:
+    sigs = {}
+    all_indirect_jump = False
+    for compiler in COMPILERS:
+        for opt_level in OPT_LEVELS:
+            # TODO: 이제 gcc O0, O3, clang O0, O3로 컴파일된 바이너리가 시그니처로 생성될 수 있도록 수정해야함
+            vuln_name, patch_name = f"{test.cve}_vuln_{compiler}_{opt_level}", f"{test.cve}_patch_{compiler}_{opt_level}"        
+
+                # # vuln_name, patch_name = f"{test.cve}_vuln", f"{test.cve}_patch"
+            vuln_path, patch_path = f"{BINARY_PATH}/{test.project}/{vuln_name}", f"{BINARY_PATH}/{test.project}/{patch_name}"
+            
+            funcnames = []
+            for diffs in diffparser.parse_result:
+                funcnames.extend(list(diffs['functions'].keys()))
+            debugparser2 = DebugParser2.from_binary(vuln_path, patch_path, funcnames)
+            # binary_diffs = diffparser.get_binarylevel_change(debugparser2, test.cve)
+            binary_diffs = diffparser.get_binarylevel_change(debugparser2)
+            # print(binary_diffs)
+            signature_generator = Generator.from_binary(vuln_path, patch_path)
+            
+            for diffs in binary_diffs:
+                funcname = diffs.funcname
+                sigs[funcname] = {f"{compiler}_{opt_level}": []}
+                vuln_has_indirect_jump = None
+                patch_has_indirect_jump = None
+                has_indirect_jump = False
+                for hunk in diffs.hunks:
+                    # print(f"{funcname} {hunk.type}")
+                    if hunk.type == "add":
+                        collect, patch_has_indirect_jump = signature_generator.generate(
+                            funcname, hunk.add, "patch", hunk.add_pattern)
+                        if collect is None:
+                            continue
+                        signature = Signature.from_add(
+                            collect, funcname, "patch", hunk.add_pattern)
+                        sigs[funcname][f"{compiler}_{opt_level}"].append(signature)
+                        if patch_has_indirect_jump and not has_indirect_jump:
+                            has_indirect_jump = True
+                        
+
+                    elif hunk.type == "remove":
+                        collect, vuln_has_indirect_jump = signature_generator.generate(
+                            funcname, hunk.remove, "vuln", hunk.remove_pattern)
+                        if collect is None:
+                            continue
+                        signature = Signature.from_remove(
+                            collect, funcname, "vuln", hunk.remove_pattern)
+                        sigs[funcname][f"{compiler}_{opt_level}"].append(signature)
+                        if vuln_has_indirect_jump and not has_indirect_jump:
+                            has_indirect_jump = True
+                    elif hunk.type == "modify":
+                        collect_patch, patch_has_indirect_jump = signature_generator.generate(
+                            funcname, hunk.add, "patch", hunk.add_pattern)
+                        # exit(0)
+                        # print("=" * 20)
+                        collect_vuln, vuln_has_indirect_jump = signature_generator.generate(
+                            funcname, hunk.remove, "vuln", hunk.remove_pattern)
+                        
+
+                        # print(f"before refine collect_patch: {collect_patch}")
+                        # print(f"before refine collect_vuln: {collect_vuln}")
+                        if collect_patch is None and collect_vuln is None:
+                            continue
+                        # print(f"type_collect_patch: {type(collect_patch)}")
+                        # traverse_collect(collect_patch)
+                        
+                        # print(f"after refine collect_patch: {collect_patch}")
+                        # print(f"after refine collect_vuln: {collect_vuln}")
+                        
+                        signature = Signature.from_modify(
+                            collect_vuln, collect_patch, funcname, hunk.add_pattern, hunk.remove_pattern)
+                        sigs[funcname][f"{compiler}_{opt_level}"].append(signature)
+                        
+                        if (patch_has_indirect_jump or vuln_has_indirect_jump) and not has_indirect_jump:
+                            has_indirect_jump = True
+                        # print(f"signature: {signature}")
+                    
+                    else:
+                        raise ValueError("hunk type error")
+                    if not all_indirect_jump and has_indirect_jump:
+                        all_indirect_jump = True
+                if len(sigs[funcname]) == 0:
+                    logger.error(f"{test.cve} {funcname} No signature generated")
+                    sigs.pop(funcname)
+            if len(sigs.keys()) == 0:
+                logger.error(f"{test.cve} No signature generated")
+                assert False
+            for funcname in sigs.keys():
+                for compiler_opt, sig in sigs[funcname].items():
+                    # sig = sigs[funcname]
+                    if len(sig) > 1:
+                        sigs[funcname][compiler_opt] = valid_sig(sig)
+                    # sig = sigs[funcname]
+                    sigs[funcname][compiler_opt] = remove_duplicate(sig)
+                    logger.info(f"{compiler_opt}'s signatures")
+                    for s in sigs[funcname][compiler_opt]:
+                        s.show()
+    return sigs, all_indirect_jump
+
+def run_one(tests: list[TestJson]) -> list[TestResult]:
     global min_time, max_time, max_project
     test_results = []
     test = tests[0]
-
-    # TODO: 이제 gcc O0, O3, clang O0, O3로 컴파일된 바이너리가 시그니처로 생성될 수 있도록 수정해야함
-    
-    print(f"run_one {test.cve} {compiler} {opt_level}")
-    vuln_name, patch_name = f"{test.cve}_vuln_{compiler}_{opt_level}", f"{test.cve}_patch_{compiler}_{opt_level}"        
-
-    # # vuln_name, patch_name = f"{test.cve}_vuln", f"{test.cve}_patch"
-    vuln_path, patch_path = f"{BINARY_PATH}/{test.project}/{vuln_name}", f"{BINARY_PATH}/{test.project}/{patch_name}"
-
     diff_name = f"{test.cve}_{test.commit[:6]}.diff"
     # diff_name = f"{test.cve}.diff"
     diff_path = f"{DIFF_PATH}/{diff_name}"
     # print(diff_path)
-   
     diffparser = DiffParser.from_file(diff_path)
     # print(diffparser.parse_result)
     # print(f"diffparser.parse_result {diffparser.parse_result}")
-    funcnames = []
-    for diffs in diffparser.parse_result:
-        funcnames.extend(list(diffs['functions'].keys()))
-    debugparser2 = DebugParser2.from_binary(vuln_path, patch_path, funcnames)
-    # binary_diffs = diffparser.get_binarylevel_change(debugparser2, test.cve)
-    binary_diffs = diffparser.get_binarylevel_change(debugparser2)
-    # print(binary_diffs)
-    signature_generator = Generator.from_binary(vuln_path, patch_path)
-    sigs = {}
+        
+    # sigs[funcname] = {f"{compiler}_{opt_level}": []}
+    sigs, has_indirect_jump = generate_signatures(test, diffparser)
 
-    for diffs in binary_diffs:
-        funcname = diffs.funcname
-        sigs[funcname] = []
-        vuln_has_indirect_jump = None
-        patch_has_indirect_jump = None
-        has_indirect_jump = False
-        for hunk in diffs.hunks:
-            # print(f"{funcname} {hunk.type}")
-            if hunk.type == "add":
-                collect, patch_has_indirect_jump = signature_generator.generate(
-                    funcname, hunk.add, "patch", hunk.add_pattern)
-                if collect is None:
-                    continue
-                signature = Signature.from_add(
-                    collect, funcname, "patch", hunk.add_pattern)
-                sigs[funcname].append(signature)
-                if patch_has_indirect_jump and not has_indirect_jump:
-                    has_indirect_jump = True
-
-            elif hunk.type == "remove":
-                collect, vuln_has_indirect_jump = signature_generator.generate(
-                    funcname, hunk.remove, "vuln", hunk.remove_pattern)
-                if collect is None:
-                    continue
-                signature = Signature.from_remove(
-                    collect, funcname, "vuln", hunk.remove_pattern)
-                sigs[funcname].append(signature)
-                if vuln_has_indirect_jump and not has_indirect_jump:
-                    has_indirect_jump = True
-            elif hunk.type == "modify":
-                collect_patch, patch_has_indirect_jump = signature_generator.generate(
-                    funcname, hunk.add, "patch", hunk.add_pattern)
-                # exit(0)
-                # print("=" * 20)
-                collect_vuln, vuln_has_indirect_jump = signature_generator.generate(
-                    funcname, hunk.remove, "vuln", hunk.remove_pattern)
-                
-
-                # print(f"before refine collect_patch: {collect_patch}")
-                # print(f"before refine collect_vuln: {collect_vuln}")
-                if collect_patch is None and collect_vuln is None:
-                    continue
-                # print(f"type_collect_patch: {type(collect_patch)}")
-                # traverse_collect(collect_patch)
-                
-                # print(f"after refine collect_patch: {collect_patch}")
-                # print(f"after refine collect_vuln: {collect_vuln}")
-                
-                signature = Signature.from_modify(
-                    collect_vuln, collect_patch, funcname, hunk.add_pattern, hunk.remove_pattern)
-                sigs[funcname].append(signature)
-                if (patch_has_indirect_jump or vuln_has_indirect_jump) and not has_indirect_jump:
-                    has_indirect_jump = True
-                # print(f"signature: {signature}")
-            else:
-                raise ValueError("hunk type error")
-        if len(sigs[funcname]) == 0:
-            logger.error(f"{test.cve} {funcname} No signature generated")
-            sigs.pop(funcname)
-    if len(sigs.keys()) == 0:
-        logger.error(f"{test.cve} No signature generated")
-        assert False
-    for funcname in sigs.keys():
-        sig = sigs[funcname]
-        if len(sig) > 1:
-            sigs[funcname] = valid_sig(sig)
-        sig = sigs[funcname]
-        sigs[funcname] = remove_duplicate(sig)
-        for s in sigs[funcname]:
-            s.show()
-
+    
+    # TODO: sigs의 형태가 바뀌었음. sigs[funcname][compiler_opt] = [Signature]
+    # 이에 맞춰 test를 수정해야함
     testor = Test(sigs)
     if TEST_NUM >= 0:  # test specific number of tests
         if TEST_NUM == 0:
@@ -184,10 +199,8 @@ def run_all():
         test_results = []
         logger.info(f"{cve_id}")
         project = dataset.tests[cve_id][0].project
-        for compiler in COMPILERS:
-            for opt_level in OPT_LEVELS:
-                result = run_one(dataset.tests[cve_id], compiler, opt_level)
-                test_results.extend(result)
+        result = run_one(dataset.tests[cve_id])
+        test_results.extend(result)
         logger.info(
             f"{project} {cve_id} {evaluate.precision_recall_f1(test_results)}")
         test_all.extend(test_results)

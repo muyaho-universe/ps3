@@ -140,6 +140,7 @@ class Simulator:
     def __init__(self, proj: angr.Project) -> None:
         self.proj = proj
         self.from_to = []
+        self.new_collect = {}
 
     def _init_function(self, funcname: str):
         symbol = self.proj.loader.find_symbol(funcname)
@@ -314,63 +315,69 @@ class Simulator:
         return result
 
     def generate_forall_bb(self, funcname: str, dic, sig_has_indirect_jump: bool) -> dict:
-        self._init_function_for_all(funcname, sig_has_indirect_jump)
+        if self.new_collect == {}:
+            print("generate new_collect")
+            self._init_function_for_all(funcname, sig_has_indirect_jump)
 
-        all_addrs = []
-        collect = {}
-        for block in self.function.blocks:
-            all_addrs.extend(block.instruction_addrs)
-        self.supernode_parent_map = self.get_parent_supernode_addr_for_addresses(all_addrs)
-        self.address_parent = self.get_parent_supernode_nodeobj_for_addresses(all_addrs)
-        self.inspect_addrs = all_addrs
-        start_node = self.cfg.get_any_node(self.function.addr)
-        init_state = State(start_node, Environment())
-        reduce_addr = set(self._reduce_addresses_by_basicblock(all_addrs))
-        # based on basic block inspect
-        init_state.inspect = {addr: {} for addr in reduce_addr}
-        init_state.inspect_patterns = dic
-        queue = [init_state]
-        visit = set()
-        while len(queue) > 0:  # DFS
-            state = queue.pop()
-            if state.node.addr in visit:
-                continue
-            result = self._simulateBB(state)
-            if isinstance(result, list):  # fork
-                visit.update(result[0].addrs)
-                queue.extend(result[1:])
-            else:  # state run to the end
-                visit.update(result.addrs)
-                collect.update(result.inspect)
-        # print(f"reduce_addr: {reduce_addr}")
-        # print(f"collect: {collect}")
-        # print(f"self.supernode_parent_map: {self.supernode_parent_map}")
-        # print(f"self.address_parent: {self.address_parent}")
-        # print(f"self.super_node: {self.super_node}")
-        # print(f"self.supernode_map: {self.supernode_map}")
-        # exit(0)
-        for parent, child in self.dom_tree.edges():
-            # print(f"parent: {parent}, child: {child}")
-            # print(f"from_to: {self.from_to}")
-            is_true_branch = (parent, child) in self.from_to
-            self.dom_tree[parent][child]['true_branch'] = is_true_branch
+            all_addrs = []
+            collect = {}
+            for block in self.function.blocks:
+                all_addrs.extend(block.instruction_addrs)
+            self.supernode_parent_map = self.get_parent_supernode_addr_for_addresses(all_addrs)
+            self.address_parent = self.get_parent_supernode_nodeobj_for_addresses(all_addrs)
+            self.inspect_addrs = all_addrs
+            start_node = self.cfg.get_any_node(self.function.addr)
+            init_state = State(start_node, Environment())
+            reduce_addr = set(self._reduce_addresses_by_basicblock(all_addrs))
+            # based on basic block inspect
+            init_state.inspect = {addr: {} for addr in reduce_addr}
+            init_state.inspect_patterns = dic
+            queue = [init_state]
+            visit = set()
+            while len(queue) > 0:  # DFS
+                state = queue.pop()
+                if state.node.addr in visit:
+                    continue
+                result = self._simulateBB(state)
+                if isinstance(result, list):  # fork
+                    visit.update(result[0].addrs)
+                    queue.extend(result[1:])
+                else:  # state run to the end
+                    visit.update(result.addrs)
+                    collect.update(result.inspect)
+            # print(f"reduce_addr: {reduce_addr}")
+            # print(f"collect: {collect}")
+            # print(f"self.supernode_parent_map: {self.supernode_parent_map}")
+            # print(f"self.address_parent: {self.address_parent}")
+            # print(f"self.super_node: {self.super_node}")
+            # print(f"self.supernode_map: {self.supernode_map}")
+            # exit(0)
+            for parent, child in self.dom_tree.edges():
+                # print(f"parent: {parent}, child: {child}")
+                # print(f"from_to: {self.from_to}")
+                is_true_branch = (parent, child) in self.from_to
+                self.dom_tree[parent][child]['true_branch'] = is_true_branch
 
-        for parent, child in self.dom_tree.edges():
-            is_true_branch = self.dom_tree[parent][child].get('true_branch', False)
-            # print(f"0x{parent:x} -> 0x{child:x}, true_branch: {is_true_branch}")
-        temp_supernode = {}
-        for k in collect.keys():
-            if k in self.supernode_map:
-                supernode = self.supernode_map[k]
-                if supernode not in temp_supernode:
-                    temp_supernode[supernode] = []
-                temp_supernode[supernode].append(k)
-            else:
-                # print(f"key {k} not in supernode_map")
-                pass
-        new_collect = {}
-        new_collect = _update_new_trace(collect, temp_supernode, self.supernode_parent_map, self.supernode_map, self.dom_tree, self.super_node, self.indirect_jumps)
-
+            for parent, child in self.dom_tree.edges():
+                is_true_branch = self.dom_tree[parent][child].get('true_branch', False)
+                # print(f"0x{parent:x} -> 0x{child:x}, true_branch: {is_true_branch}")
+            temp_supernode = {}
+            for k in collect.keys():
+                if k in self.supernode_map:
+                    supernode = self.supernode_map[k]
+                    if supernode not in temp_supernode:
+                        temp_supernode[supernode] = []
+                    temp_supernode[supernode].append(k)
+                else:
+                    # print(f"key {k} not in supernode_map")
+                    pass
+            new_collect = {}
+            new_collect = _update_new_trace(collect, temp_supernode, self.supernode_parent_map, self.supernode_map, self.dom_tree, self.super_node, self.indirect_jumps)
+            self.new_collect = new_collect
+        # 매번 호출때 마다 안뽑아도 됨
+        else:
+            print("already generate new_collect")
+            new_collect = self.new_collect
         return new_collect
 
     def get_supernode_for_addresses(self, addresses: list[int]) -> dict[int, int]:
@@ -1076,7 +1083,7 @@ class Test:
     def __init__(self, sigs: dict[str, list[Signature]]) -> None:
         self.sigs = sigs
 
-    def test_path(self, binary_path: str, ground_truth: str, has_indirect_jump: bool) -> str:
+    def test_path(self, binary_path: str, ground_truth: str, has_indirect_jump: bool) -> tuple[str, int]:
         try:
             project = angr.Project(binary_path)
             simulator = Simulator(project)
@@ -1088,10 +1095,10 @@ class Test:
         return self.test_project(simulator, ground_truth, has_indirect_jump)
 
 
-    def test_project(self, simulator: Simulator, ground_truth: str, has_indirect_jump: bool) -> str:
+    def test_project(self, simulator: Simulator, ground_truth: str, has_indirect_jump: bool) -> tuple[str, int]:
         # if one think it's vuln, then it is vuln
         exist_patch = False
-        results = []
+        results = {"vuln": 0, "patch": 0}
         funcnames = self.sigs.keys()
 
         for funcname in self.sigs.keys():
@@ -1100,22 +1107,32 @@ class Test:
             # simulator = Simulator(simulator.proj)
             # sigs = [<simulator.Signature object at 0x7fafd1f517e0>]
             result = self.test_func(funcname, simulator, sigs, ground_truth, has_indirect_jump)
-            # print(f"result: {result}")
-            # time.sleep(10)
-            if result == "vuln":
-                return "vuln"
-            results.append(result)
-        # print(f"results: {results}")
-        # time.sleep(10)
-        for result in results:
-            if result == "vuln":
-                return "vuln"
-            if result == "patch":
-                exist_patch = True
-        if exist_patch:
-            return "patch"
-        return "vuln"
+            # if result == "vuln":
+            #     return "vuln"
+            # results.append(result)
+            for key, value in result.items():
+                if key not in results:
+                    results[key] = 0
+                results[key] += value
+                
+        # for result in results:
+        #     if result == "vuln":
+        #         return "vuln"
+        #     if result == "patch":
+        #         exist_patch = True
+        # if exist_patch:
+        #     return "patch"
+        # return "vuln"
         # return "patch"
+        if results["vuln"] > results["patch"]:
+            return "vuln", results["vuln"]
+        elif results["vuln"] < results["patch"]:
+            return "patch", results["patch"]
+        else:
+            # TODO: 나중에 무조건 틀린 케이스로 바꿔야함
+            logger.warning("vuln and patch have the same number of signatures, returning vuln for now")
+            return "vuln", results["vuln"]
+        # return "patch", results["patch"]
 
     def use_pattern(self, patterns: Patterns) -> str:
         for pattern in patterns.patterns:
@@ -1140,7 +1157,7 @@ class Test:
                 raise NotImplementedError(f"{type(ins)} is not considered.")
         return l
 
-    def test_func(self, funcname: str, simulator: Simulator, sigs: list[Signature], ground_truth: str, sig_has_indirect_jump: bool) -> str:
+    def test_func(self, funcname: str, simulator: Simulator, sigs: list[Signature], ground_truth: str, sig_has_indirect_jump: bool) -> dict:
         dic = {}
         
         for sig in sigs:
@@ -1155,7 +1172,7 @@ class Test:
         except FunctionNotFound:
             print(f"FunctionNotFound: {funcname}")
             return None
-        result = []
+        result = {"vuln": 0,  "patch": 0}
         # test one hunk's signature
         for sig in sigs:
             refined = False
@@ -1219,49 +1236,56 @@ class Test:
             # all_effects = extrace_effect(traces)
             all_effects = traces
             
-            old_effects = deepcopy(all_effects)
+            # old_effects = deepcopy(all_effects)
             # all_effects = list(set(all_effects))
             # logger.info(f"before rebuild all_effects: {all_effects}")
-            new_effects = {}
-            for k, v in all_effects.items():
-                new_key = rebuild_effects(k[0])
-                # try:
-                #     assert new_key == k[0], f"new_key {new_key} != old_key {k[0]}"
-                # except AssertionError:
-                #     print(f"new_key {new_key.ins.expr}, type: {type(new_key.ins.expr)}")
-                #     print(f"old_key {k[0].ins.expr}, type: {type(k[0].ins.expr)}")
-                #     exit(0)
-                k = (new_key, k[1])
+            if self.all_effects == {}:
+                print("rebuild all_effects")
+                new_effects = {}
+                for k, v in all_effects.items():
+                    new_key = rebuild_effects(k[0])
+                    # try:
+                    #     assert new_key == k[0], f"new_key {new_key} != old_key {k[0]}"
+                    # except AssertionError:
+                    #     print(f"new_key {new_key.ins.expr}, type: {type(new_key.ins.expr)}")
+                    #     print(f"old_key {k[0].ins.expr}, type: {type(k[0].ins.expr)}")
+                    #     exit(0)
+                    k = (new_key, k[1])
 
-                old_v = deepcopy(v)
-                new_v = []
-                for effect in v:
-                    new_v.append(rebuild_effects(effect))
-                # assert new_v == old_v or str(new_v) == str(old_v), f"new_v {new_v} != old_v {old_v}"
-                # if new_v != old_v:
-                                # logger.info(f"str(new_v) == str(old_v): {str(nv) == str(ov)}")
-                                # logger.info(f"new_v type: {type(nv)}, old_v type: {type(ov)}")
-                                # logger.info(f"new_v ins: {nv.ins}, old_v ins: {ov.ins}")
-                                # logger.info(f"new_v expr: {nv.expr}, old_v expr: {ov.expr}")
-                    # raise AssertionError(f"new_v != old_v, {str(new_v) == str(ov)}")
-                new_effects[k] = new_v
+                    old_v = deepcopy(v)
+                    new_v = []
+                    for effect in v:
+                        new_v.append(rebuild_effects(effect))
+                    # assert new_v == old_v or str(new_v) == str(old_v), f"new_v {new_v} != old_v {old_v}"
+                    # if new_v != old_v:
+                                    # logger.info(f"str(new_v) == str(old_v): {str(nv) == str(ov)}")
+                                    # logger.info(f"new_v type: {type(nv)}, old_v type: {type(ov)}")
+                                    # logger.info(f"new_v ins: {nv.ins}, old_v ins: {ov.ins}")
+                                    # logger.info(f"new_v expr: {nv.expr}, old_v expr: {ov.expr}")
+                        # raise AssertionError(f"new_v != old_v, {str(new_v) == str(ov)}")
+                    new_effects[k] = new_v
 
-            all_effects = new_effects
+                all_effects = new_effects
+                self.all_effects = all_effects
+            # rebuild도 한번만
+            else:
+                print("already rebuild all_effects")
+                all_effects = self.all_effects
             # logger.info(f"after rebuild all_effects: {all_effects}")
             
             
             test = False
             # essential a add patch
-            if len(vuln_effect) == 0:
-                res = effect_compare(patch_effect, all_effects, "vuln")
-                if res:
-                    result.append(res)
-            if len(patch_effect) == 0:
-                res = effect_compare(vuln_effect, all_effects, "patch")
-                if res:
-                    result.append(res)
-            if test:
-                continue
+            # if len(vuln_effect) == 0:
+            #     res = effect_compare(patch_effect, all_effects, "vuln")
+            #     if res:
+            #         result.append(res)
+            # if len(patch_effect) == 0:
+            #     res = effect_compare(vuln_effect, all_effects, "patch")
+            #     if res:
+            #         result.append(res)
+            # if test:
+            #     continue
             # for vuln in vuln_effect:
             #     if vuln in all_effects:
             #         vuln_match.append(vuln)
@@ -1287,24 +1311,30 @@ class Test:
             
             vuln_num = self._match2len(vuln_match)
             patch_num = self._match2len(patch_match)
+            result["vuln"] += vuln_num
+            result["patch"] += patch_num
+        return result
             # print(vuln_num, patch_num, funcname)
-            if vuln_num == 0 and patch_num == 0:
-                continue
-            if patch_num == vuln_num:
-                continue
-            if vuln_num >= patch_num:
-                return "vuln"
-            result.append("patch" if patch_num > vuln_num else "vuln")
-        # print(result)
-        if len(result) == 0:
-            return None
-        # if one think it's vuln, then it is vuln
-        if "vuln" in result:
-            return "vuln"
-        if "patch" in result:
-            return "patch"
-        # if no vuln and patch, then it's vuln
-        return "vuln"
+        #     if vuln_num == 0 and patch_num == 0:
+        #         continue
+        #     elif patch_num == vuln_num:
+        #         continue
+        #     elif vuln_num >= patch_num:
+        #         # return "vuln", vuln_num
+        #         result.append(("vuln", vuln_num))
+        #     elif patch_num > vuln_num:
+        #         result.append(("patch", patch_num))
+        #     # result.append("patch" if patch_num > vuln_num else "vuln")
+        # # print(result)
+        # if len(result) == 0:
+        #     return None
+        # # if one think it's vuln, then it is vuln
+        # if "vuln" in result:
+        #     return "vuln"
+        # if "patch" in result:
+        #     return "patch"
+        # # if no vuln and patch, then it's vuln
+        # return "vuln"
         #     if( patch_num == vuln_num) or (vuln_num == 0 and patch_num == 0):
         #         if len(vuln_effect) != 0 and len(patch_effect) != 0:
         #             logger.info(f"{funcname} {vuln_num} == {patch_num}, cannot determine")

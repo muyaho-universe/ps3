@@ -34,23 +34,7 @@ def run_one(tests: list[TestJson], compiler: str, opt_level: str) -> list[TestRe
     # TODO: 이제 gcc O0, O3, clang O0, O3로 컴파일된 바이너리가 시그니처로 생성될 수 있도록 수정해야함
     
     print(f"run_one {test.cve} {compiler} {opt_level}")
-    if compiler == "gcc":
-        if opt_level == "O0":
-            vuln_name, patch_name = f"{test.cve}_vuln_gcc_O0", f"{test.cve}_patch_gcc_O0"
-        elif opt_level == "O3":
-            vuln_name, patch_name = f"{test.cve}_vuln_gcc_O3", f"{test.cve}_patch_gcc_O3"
-        else:
-            raise ValueError("Invalid compiler option")
-    elif compiler == "clang":
-        if opt_level == "O0":
-            vuln_name, patch_name = f"{test.cve}_vuln_clang_O0", f"{test.cve}_patch_clang_O0"
-        elif opt_level == "O3":
-            vuln_name, patch_name = f"{test.cve}_vuln_clang_O3", f"{test.cve}_patch_clang_O3"
-        else:
-            raise ValueError("Invalid compiler option")
-    else:
-        raise ValueError("Invalid compiler")
-        
+    vuln_name, patch_name = f"{test.cve}_vuln_{compiler}_{opt_level}", f"{test.cve}_patch_{compiler}_{opt_level}"        
 
     # # vuln_name, patch_name = f"{test.cve}_vuln", f"{test.cve}_patch"
     vuln_path, patch_path = f"{BINARY_PATH}/{test.project}/{vuln_name}", f"{BINARY_PATH}/{test.project}/{patch_name}"

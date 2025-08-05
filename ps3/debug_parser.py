@@ -90,47 +90,76 @@ class DebugParser:
         dic = {}
         addr_list = [hex(addr) for addr in addr_list]
         # print("self.binary_path:", self.binary_path)
-        p = subprocess.Popen([ADDR2LINE, '-afip', '-e', self.binary_path],
-                             stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        addr_str = '\n'.join(addr_list)
-        output, errors = p.communicate(input=addr_str.encode('utf-8'))
-        # print("output:", output)
-        if errors:
-            print('Error:', errors.decode('utf-8'))
-        else:
-            for line in output.decode('utf-8').splitlines():
-                l = line.strip()
-                
-                if l.startswith('0x'):
-                    # E.g.
-                    # 0xffffffc000a7aa9c: wcdcal_hwdep_ioctl_shared at /home/hang/pm/src-angler-20160801/sound/soc/codecs/wcdcal-hwdep.c:59
-                    # 0xffffffc000a7ab18: wcdcal_hwdep_ioctl_shared at /home/hang/pm/src-angler-20160801/sound/soc/codecs/wcdcal-hwdep.c:77 (discriminator 1)
-                    # print("l:", l)
-                    try:
+        # Try to use addr2line to get source file and line number from address
+        # if failed, use gdb to get source file and line number
+        try:
+            p = subprocess.Popen([ADDR2LINE, '-afip', '-e', self.binary_path],
+                                stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            addr_str = '\n'.join(addr_list)
+            output, errors = p.communicate(input=addr_str.encode('utf-8'))
+            # print("output:", output)
+            if errors:
+                print('Error:', errors.decode('utf-8'))
+            else:
+                for line in output.decode('utf-8').splitlines():
+                    l = line.strip()
+                    
+                    if l.startswith('0x'):
+                        # E.g.
+                        # 0xffffffc000a7aa9c: wcdcal_hwdep_ioctl_shared at /home/hang/pm/src-angler-20160801/sound/soc/codecs/wcdcal-hwdep.c:59
+                        # 0xffffffc000a7ab18: wcdcal_hwdep_ioctl_shared at /home/hang/pm/src-angler-20160801/sound/soc/codecs/wcdcal-hwdep.c:77 (discriminator 1)
+                        # print("l:", l)
+                        try:
+                            tokens = l.split(':')
+                            addr = int(tokens[0], 16)
+                            func = tokens[1].split(' ')[1]
+                            lno = int(tokens[2].split(' ')[0])
+                            if lno in dic:
+                                dic[lno].append(addr)
+                            else:
+                                dic[lno] = [addr]
+                        except ValueError:
+                            # logger.warn(f'Unrecognized ADDR2LINE output {l} !!!')
+                            raise ValueError(f'Unrecognized ADDR2LINE output {l} !!!')
+                            continue
+                    elif 'inlined by' in l:
+                        # E.g.
+                        # (inlined by) wcdcal_hwdep_ioctl_shared at /home/hang/pm/src-angler-20160801/sound/soc/codecs/wcdcal-hwdep.c:66
                         tokens = l.split(':')
-                        addr = int(tokens[0], 16)
-                        func = tokens[1].split(' ')[1]
-                        lno = int(tokens[2].split(' ')[0])
+                        lno = int(tokens[1].split(' ')[0])
+                        func = tokens[0].split(' ')[3]
                         if lno in dic:
                             dic[lno].append(addr)
                         else:
                             dic[lno] = [addr]
-                    except ValueError:
-                        logger.warn(f'Unrecognized ADDR2LINE output {l} !!!')
-                        continue
-                elif 'inlined by' in l:
-                    # E.g.
-                    # (inlined by) wcdcal_hwdep_ioctl_shared at /home/hang/pm/src-angler-20160801/sound/soc/codecs/wcdcal-hwdep.c:66
-                    tokens = l.split(':')
-                    lno = int(tokens[1].split(' ')[0])
-                    func = tokens[0].split(' ')[3]
-                    if lno in dic:
-                        dic[lno].append(addr)
                     else:
-                        dic[lno] = [addr]
-                else:
-                    logger.warn(f'Unrecognized ADDR2LINE output {l} !!!')
-                    continue
+                        # logger.warn(f'Unrecognized ADDR2LINE output {l} !!!')
+                        raise ValueError(f'Unrecognized ADDR2LINE output {l} !!!')
+        except ValueError as e:
+            # logger.error(f'Failed to execute {ADDR2LINE} with error: {e}')
+            # print(f'Failed to execute {ADDR2LINE} with error: {e}')
+            dic = {}
+            # Fallback to gdb if addr2line fails
+            # cmd = f'gdb -batch -ex "file {binary_path}" -ex "info line *{addr}"'
+            # output: Line 103 of "crypto/lhash/lhash.c" starts at address 0x227cde <OPENSSL_LH_flush+158> and ends at 0x227cf0 <OPENSSL_LH_insert>.
+            for addr in addr_list:
+                cmd = f'gdb -batch -ex "file {self.binary_path}" -ex "info line *{addr}"'
+                try:
+                    output = subprocess.check_output(cmd, shell=True).decode('utf-8').strip()
+                    # print(f'GDB output: {output}')
+                    if output.startswith('Line'):
+                        tokens = output.split()
+                        lno = int(tokens[1])
+                        # addr = int(tokens[-1], 16)
+                        addr = int(addr, 16)
+                        if lno in dic:
+                            dic[lno].append(addr)
+                        else:
+                            dic[lno] = [addr]
+                    else:
+                        logger.warn(f'Unrecognized GDB output {output} !!!')
+                except subprocess.CalledProcessError as e:
+                    logger.error(f'Failed to execute {cmd} with error: {e}')
         return dic
 
     @classmethod

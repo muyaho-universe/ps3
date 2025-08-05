@@ -22,15 +22,37 @@ TEST_NUM = -1
 min_time = 99999999
 max_time = 0
 max_project = ""
+COMPILERS = ["gcc", "clang"]
+# COMPILERS = ["clang"]
+OPT_LEVELS = ["O0", "O3"]  # O0, O1, O2, O3, Os, Ofast
 
-
-def run_one(tests: list[TestJson]) -> list[TestResult]:
+def run_one(tests: list[TestJson], compiler: str, opt_level: str) -> list[TestResult]:
     global min_time, max_time, max_project
     test_results = []
     test = tests[0]
 
-    vuln_name, patch_name = f"{test.cve}_{test.commit[:6]}_vuln", f"{test.cve}_{test.commit[:6]}_patch"
-    # vuln_name, patch_name = f"{test.cve}_vuln", f"{test.cve}_patch"
+    # TODO: 이제 gcc O0, O3, clang O0, O3로 컴파일된 바이너리가 시그니처로 생성될 수 있도록 수정해야함
+    
+    print(f"run_one {test.cve} {compiler} {opt_level}")
+    if compiler == "gcc":
+        if opt_level == "O0":
+            vuln_name, patch_name = f"{test.cve}_vuln_gcc_O0", f"{test.cve}_patch_gcc_O0"
+        elif opt_level == "O3":
+            vuln_name, patch_name = f"{test.cve}_vuln_gcc_O3", f"{test.cve}_patch_gcc_O3"
+        else:
+            raise ValueError("Invalid compiler option")
+    elif compiler == "clang":
+        if opt_level == "O0":
+            vuln_name, patch_name = f"{test.cve}_vuln_clang_O0", f"{test.cve}_patch_clang_O0"
+        elif opt_level == "O3":
+            vuln_name, patch_name = f"{test.cve}_vuln_clang_O3", f"{test.cve}_patch_clang_O3"
+        else:
+            raise ValueError("Invalid compiler option")
+    else:
+        raise ValueError("Invalid compiler")
+        
+
+    # # vuln_name, patch_name = f"{test.cve}_vuln", f"{test.cve}_patch"
     vuln_path, patch_path = f"{BINARY_PATH}/{test.project}/{vuln_name}", f"{BINARY_PATH}/{test.project}/{patch_name}"
 
     diff_name = f"{test.cve}_{test.commit[:6]}.diff"
@@ -178,8 +200,10 @@ def run_all():
         test_results = []
         logger.info(f"{cve_id}")
         project = dataset.tests[cve_id][0].project
-        result = run_one(dataset.tests[cve_id])
-        test_results.extend(result)
+        for compiler in COMPILERS:
+            for opt_level in OPT_LEVELS:
+                result = run_one(dataset.tests[cve_id], compiler, opt_level)
+                test_results.extend(result)
         logger.info(
             f"{project} {cve_id} {evaluate.precision_recall_f1(test_results)}")
         test_all.extend(test_results)

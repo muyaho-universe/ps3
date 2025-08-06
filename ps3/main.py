@@ -48,7 +48,10 @@ def generate_signatures(test: TestJson, diffparser:DiffParser) -> tuple[dict[str
             
             for diffs in binary_diffs:
                 funcname = diffs.funcname
-                sigs[funcname] = {f"{compiler}_{opt_level}": []}
+                if funcname not in sigs:
+                    sigs[funcname] = {f"{compiler}_{opt_level}": []}
+                if f"{compiler}_{opt_level}" not in sigs[funcname]:
+                    sigs[funcname][f"{compiler}_{opt_level}"] = []
                 vuln_has_indirect_jump = None
                 patch_has_indirect_jump = None
                 has_indirect_jump = False
@@ -139,7 +142,6 @@ def run_one(tests: list[TestJson]) -> list[TestResult]:
         
     # sigs[funcname] = {f"{compiler}_{opt_level}": []}
     sigs, has_indirect_jump = generate_signatures(test, diffparser)
-
     
     # TODO: sigs의 형태가 바뀌었음. sigs[funcname][compiler_opt] = [Signature]
     # 이에 맞춰 test를 수정해야함

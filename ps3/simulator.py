@@ -315,69 +315,66 @@ class Simulator:
         return result
 
     def generate_forall_bb(self, funcname: str, dic, sig_has_indirect_jump: bool) -> dict:
-        if self.new_collect == {}:
-            # print("generate new_collect")
-            self._init_function_for_all(funcname, sig_has_indirect_jump)
+       
+        # print("generate new_collect")
+        self._init_function_for_all(funcname, sig_has_indirect_jump)
 
-            all_addrs = []
-            collect = {}
-            for block in self.function.blocks:
-                all_addrs.extend(block.instruction_addrs)
-            self.supernode_parent_map = self.get_parent_supernode_addr_for_addresses(all_addrs)
-            self.address_parent = self.get_parent_supernode_nodeobj_for_addresses(all_addrs)
-            self.inspect_addrs = all_addrs
-            start_node = self.cfg.get_any_node(self.function.addr)
-            init_state = State(start_node, Environment())
-            reduce_addr = set(self._reduce_addresses_by_basicblock(all_addrs))
-            # based on basic block inspect
-            init_state.inspect = {addr: {} for addr in reduce_addr}
-            init_state.inspect_patterns = dic
-            queue = [init_state]
-            visit = set()
-            while len(queue) > 0:  # DFS
-                state = queue.pop()
-                if state.node.addr in visit:
-                    continue
-                result = self._simulateBB(state)
-                if isinstance(result, list):  # fork
-                    visit.update(result[0].addrs)
-                    queue.extend(result[1:])
-                else:  # state run to the end
-                    visit.update(result.addrs)
-                    collect.update(result.inspect)
-            # print(f"reduce_addr: {reduce_addr}")
-            # print(f"collect: {collect}")
-            # print(f"self.supernode_parent_map: {self.supernode_parent_map}")
-            # print(f"self.address_parent: {self.address_parent}")
-            # print(f"self.super_node: {self.super_node}")
-            # print(f"self.supernode_map: {self.supernode_map}")
-            # exit(0)
-            for parent, child in self.dom_tree.edges():
-                # print(f"parent: {parent}, child: {child}")
-                # print(f"from_to: {self.from_to}")
-                is_true_branch = (parent, child) in self.from_to
-                self.dom_tree[parent][child]['true_branch'] = is_true_branch
+        all_addrs = []
+        collect = {}
+        for block in self.function.blocks:
+            all_addrs.extend(block.instruction_addrs)
+        self.supernode_parent_map = self.get_parent_supernode_addr_for_addresses(all_addrs)
+        self.address_parent = self.get_parent_supernode_nodeobj_for_addresses(all_addrs)
+        self.inspect_addrs = all_addrs
+        start_node = self.cfg.get_any_node(self.function.addr)
+        init_state = State(start_node, Environment())
+        reduce_addr = set(self._reduce_addresses_by_basicblock(all_addrs))
+        # based on basic block inspect
+        init_state.inspect = {addr: {} for addr in reduce_addr}
+        init_state.inspect_patterns = dic
+        queue = [init_state]
+        visit = set()
+        while len(queue) > 0:  # DFS
+            state = queue.pop()
+            if state.node.addr in visit:
+                continue
+            result = self._simulateBB(state)
+            if isinstance(result, list):  # fork
+                visit.update(result[0].addrs)
+                queue.extend(result[1:])
+            else:  # state run to the end
+                visit.update(result.addrs)
+                collect.update(result.inspect)
+        # print(f"reduce_addr: {reduce_addr}")
+        # print(f"collect: {collect}")
+        # print(f"self.supernode_parent_map: {self.supernode_parent_map}")
+        # print(f"self.address_parent: {self.address_parent}")
+        # print(f"self.super_node: {self.super_node}")
+        # print(f"self.supernode_map: {self.supernode_map}")
+        # exit(0)
+        for parent, child in self.dom_tree.edges():
+            # print(f"parent: {parent}, child: {child}")
+            # print(f"from_to: {self.from_to}")
+            is_true_branch = (parent, child) in self.from_to
+            self.dom_tree[parent][child]['true_branch'] = is_true_branch
 
-            for parent, child in self.dom_tree.edges():
-                is_true_branch = self.dom_tree[parent][child].get('true_branch', False)
-                # print(f"0x{parent:x} -> 0x{child:x}, true_branch: {is_true_branch}")
-            temp_supernode = {}
-            for k in collect.keys():
-                if k in self.supernode_map:
-                    supernode = self.supernode_map[k]
-                    if supernode not in temp_supernode:
-                        temp_supernode[supernode] = []
-                    temp_supernode[supernode].append(k)
-                else:
-                    # print(f"key {k} not in supernode_map")
-                    pass
-            new_collect = {}
-            new_collect = _update_new_trace(collect, temp_supernode, self.supernode_parent_map, self.supernode_map, self.dom_tree, self.super_node, self.indirect_jumps)
-            self.new_collect = new_collect
-        # 매번 호출때 마다 안뽑아도 됨
-        else:
-            # print("already generate new_collect")
-            new_collect = self.new_collect
+        for parent, child in self.dom_tree.edges():
+            is_true_branch = self.dom_tree[parent][child].get('true_branch', False)
+            # print(f"0x{parent:x} -> 0x{child:x}, true_branch: {is_true_branch}")
+        temp_supernode = {}
+        for k in collect.keys():
+            if k in self.supernode_map:
+                supernode = self.supernode_map[k]
+                if supernode not in temp_supernode:
+                    temp_supernode[supernode] = []
+                temp_supernode[supernode].append(k)
+            else:
+                # print(f"key {k} not in supernode_map")
+                pass
+        new_collect = {}
+        new_collect = _update_new_trace(collect, temp_supernode, self.supernode_parent_map, self.supernode_map, self.dom_tree, self.super_node, self.indirect_jumps)
+        self.new_collect = new_collect
+        
         return new_collect
 
     def get_supernode_for_addresses(self, addresses: list[int]) -> dict[int, int]:
@@ -1153,6 +1150,7 @@ class Test:
                     best_comb = comb
             else:
                 continue  # equal, skip
+        self.all_effects = {}
         if max_score[0] == "None":
             print("No valid signatures found, returning None")
             # 일단은 vuln으로 처리
@@ -1224,7 +1222,7 @@ class Test:
                                 # logger.info(f"new_v expr: {nv.expr}, old_v expr: {ov.expr}")
                     # raise AssertionError(f"new_v != old_v, {str(new_v) == str(ov)}")
                 new_effects[k] = new_v
-
+            logger.info(f"new_effects: {new_effects}")
             all_effects = new_effects
             self.all_effects = all_effects
         else:
@@ -1240,7 +1238,7 @@ class Test:
                     vuln_effect = sig.collect
                     vuln_effect = single_refine(vuln_effect)
                     sig.refined_vuln = vuln_effect
-                    # logger.info(f"refined vuln_effect: {vuln_effect}")
+                    logger.info(f"refined vuln_effect: {vuln_effect}")
                 else:
                     vuln_effect = sig.refined_vuln
                 
@@ -1254,7 +1252,7 @@ class Test:
                     patch_effect = sig.collect
                     patch_effect = single_refine(patch_effect)
                     sig.refined_patch = patch_effect
-                    # logger.info(f"refined patch_effect: {patch_effect}")
+                    logger.info(f"refined patch_effect: {patch_effect}")
                 else:
                     patch_effect = sig.refined_patch
                 # print(f"refined patch_effect: {patch_effect}")
@@ -1268,10 +1266,16 @@ class Test:
                     # patch_effect, _ = patch_info
                     # vuln_effect, patch_effect = sig.sig_dict["remove"], sig.sig_dict["add"]
                     vuln_effect, patch_effect = sig.collect[0], sig.collect[1] # vuln_effect, patch_effect는 dict 형태
-                    vuln_effect = single_refine(vuln_effect)
-                    patch_effect = single_refine(patch_effect)
-                    # logger.info(f"refined vuln_effect: {vuln_effect}")
-                    # logger.info(f"refined patch_effect: {patch_effect}")
+                    if vuln_effect is not None:
+                        vuln_effect = single_refine(vuln_effect)
+                    else:
+                        vuln_effect = {}
+                    if patch_effect is not None:
+                        patch_effect = single_refine(patch_effect)
+                    else:
+                        patch_effect = {}
+                    logger.info(f"refined vuln_effect: {vuln_effect}")
+                    logger.info(f"refined patch_effect: {patch_effect}")
 
                     sig.sig_dict["add"] = patch_effect
                     sig.sig_dict["remove"] = vuln_effect
@@ -1304,34 +1308,41 @@ class Test:
             # if len(vuln_effect) == 0:
             #     res = effect_compare(patch_effect, all_effects, "vuln")
             #     if res:
-            #         result.append(res)
+            #         test = True
+            #         result[res] = 100
+            # #         result.append(res)
             # if len(patch_effect) == 0:
             #     res = effect_compare(vuln_effect, all_effects, "patch")
             #     if res:
-            #         result.append(res)
+            #         test = True
+            #         # 틀림없는 res
+            #         result[res] = 100
+            #         # result.append(res)
             # if test:
             #     continue
             # for vuln in vuln_effect:
             #     if vuln in all_effects:
             #         vuln_match.append(vuln)
-            for vuln_key, vuln_value in vuln_effect.items():
-                # vuln_same_key = key_checker(vuln_key, list(all_effects.keys()))
-                # if vuln_same_key is not None:
-                if vuln_key in all_effects:
-                    for vv in vuln_value:
-                        # if vv in all_effects[vuln_key]:
-                        if vv in all_effects[vuln_key]:
-                            vuln_match.append(vv)
+            if len(vuln_effect) != 0:
+                for vuln_key, vuln_value in vuln_effect.items():
+                    # vuln_same_key = key_checker(vuln_key, list(all_effects.keys()))
+                    # if vuln_same_key is not None:
+                    if vuln_key in all_effects:
+                        for vv in vuln_value:
+                            # if vv in all_effects[vuln_key]:
+                            if vv in all_effects[vuln_key]:
+                                vuln_match.append(vv)
             # for patch in patch_effect:                
             #     if patch in all_effects:
             #         patch_match.append(patch)
-            for patch_key, patch_value in patch_effect.items():
-                # patch_same_key = key_checker(patch_key, list(all_effects.keys()))
-                # if patch_same_key is not None:
-                if patch_key in all_effects:
-                    for pv in patch_value:
-                        if pv in all_effects[patch_key]:
-                            patch_match.append(pv)
+            if len(patch_effect) != 0:
+                for patch_key, patch_value in patch_effect.items():
+                    # patch_same_key = key_checker(patch_key, list(all_effects.keys()))
+                    # if patch_same_key is not None:
+                    if patch_key in all_effects:
+                        for pv in patch_value:
+                            if pv in all_effects[patch_key]:
+                                patch_match.append(pv)
             logger.info(f"vuln match {vuln_match}, patch match {patch_match}")
             
             vuln_num = self._match2len(vuln_match)
@@ -1414,7 +1425,7 @@ class Test:
         # return "vuln"
         # return "patch"
 
-def effect_compare(effect, all_effects, result_type):
+def effect_compare(effect, all_effects, result_type) -> str | None:
     """
     effect: dict (patch_effect or vuln_effect)
     all_effects: dict (비교 대상)

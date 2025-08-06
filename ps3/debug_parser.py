@@ -2,13 +2,18 @@
 import logging
 import subprocess
 import os
-from settings import ADDR2LINE
+from settings import ADDR2LINE, LOG_PATH
 from log import *
+import re
 
 VULN = 0
 PATCH = 1
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.DEBUG)
+logger = get_logger(__name__)
+logger.setLevel(INFO)
+file_handler = logging.FileHandler(LOG_PATH)
+file_handler.setLevel(logging.INFO)
+logger.addHandler(file_handler)
+ansi_escape = re.compile(r'\x1b\[[0-9;]*m')
 
 
 class DebugParser:
@@ -136,7 +141,8 @@ class DebugParser:
                         # logger.warn(f'Unrecognized ADDR2LINE output {l} !!!')
                         raise ValueError(f'Unrecognized ADDR2LINE output {l} !!!')
         except ValueError as e:
-            # logger.error(f'Failed to execute {ADDR2LINE} with error: {e}')
+            bin_name = os.path.basename(self.binary_path)
+            logger.info(f'Failed to execute ADDR2LINE to {bin_name}, using gdb instead')
             # print(f'Failed to execute {ADDR2LINE} with error: {e}')
             dic = {}
             # Fallback to gdb if addr2line fails

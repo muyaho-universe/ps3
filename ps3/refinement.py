@@ -165,6 +165,7 @@ def single_refine(myself: dict[(InspectInfo, bool):list[InspectInfo]]) -> dict[(
             
             rebuild_new_key = single_refine_one(new_key_info)
             key = (rebuild_new_key, key[1])  # key는 (InspectInfo, bool) 형태
+            # key = (new_key_info, key[1])  # key는 (InspectInfo, bool) 형태
         my_effects[key] = []
         for info in value:
             new_info = rebuild_effects(info)
@@ -429,7 +430,11 @@ def binop_simplifier(expr: IRExpr | pc.IRConst | int):
                         # 양수는 Add64로 변환
                         return Binop("Iop_Add64", [binop_simplifier(expr.args[0]), Const(val)])
                 return Binop("Iop_Add64", [binop_simplifier(expr.args[0]), binop_simplifier(expr.args[1])])
-            case "Iop_Sub8"| "Iop_Sub16" | "Iop_Sub32":
+            case "Iop_Sub8":
+                return Binop("Iop_Sub64", [binop_simplifier(expr.args[0]), binop_simplifier(expr.args[1])])
+            case "Iop_Sub16":
+                return Binop("Iop_Sub64", [binop_simplifier(expr.args[0]), binop_simplifier(expr.args[1])])
+            case "Iop_Sub32":
                 return Binop("Iop_Sub64", [binop_simplifier(expr.args[0]), binop_simplifier(expr.args[1])])
 
             case "Iop_And8":
@@ -477,6 +482,227 @@ def binop_simplifier(expr: IRExpr | pc.IRConst | int):
                 return Binop("Iop_Mul64", [binop_simplifier(expr.args[0]), binop_simplifier(expr.args[1])])
             case "Iop_Div8"| "Iop_Div16" | "Iop_Div32":
                 return Binop("Iop_Div64", [binop_simplifier(expr.args[0]), binop_simplifier(expr.args[1])])
+            case "Iop_CmpEQ8":
+                op64 = "Iop_CmpEQ64"
+                if isinstance(expr.args[1], Const):
+                    val = int(str(expr.args[1]), 16)
+                    if val > 0x7f:
+                        val = val - 0x100
+                    return Binop(op64, [binop_simplifier(expr.args[0]), Const(val)])
+                return Binop(op64, [binop_simplifier(expr.args[0]), binop_simplifier(expr.args[1])])
+            case "Iop_CmpEQ16":
+                op64 = "Iop_CmpEQ64"
+                if isinstance(expr.args[1], Const):
+                    val = int(str(expr.args[1]), 16)
+                    if val > 0x7fff:
+                        val = val - 0x10000
+                    return Binop(op64, [binop_simplifier(expr.args[0]), Const(val)])
+                return Binop(op64, [binop_simplifier(expr.args[0]), binop_simplifier(expr.args[1])])
+            case "Iop_CmpEQ32":
+                op64 = "Iop_CmpEQ64"
+                if isinstance(expr.args[1], Const):
+                    val = int(str(expr.args[1]), 16)
+                    if val > 0x7fffffff:
+                        val = val - 0x100000000
+                    return Binop(op64, [binop_simplifier(expr.args[0]), Const(val)])
+                return Binop(op64, [binop_simplifier(expr.args[0]), binop_simplifier(expr.args[1])])
+            # --- CmpNE ---
+            case "Iop_CmpNE8":
+                op64 = "Iop_CmpNE64"
+                if isinstance(expr.args[1], Const):
+                    val = int(str(expr.args[1]), 16)
+                    if val > 0x7f:
+                        val = val - 0x100
+                    return Binop(op64, [binop_simplifier(expr.args[0]), Const(val)])
+                return Binop(op64, [binop_simplifier(expr.args[0]), binop_simplifier(expr.args[1])])
+            case "Iop_CmpNE16":
+                op64 = "Iop_CmpNE64"
+                if isinstance(expr.args[1], Const):
+                    val = int(str(expr.args[1]), 16)
+                    if val > 0x7fff:
+                        val = val - 0x10000
+                    return Binop(op64, [binop_simplifier(expr.args[0]), Const(val)])
+                return Binop(op64, [binop_simplifier(expr.args[0]), binop_simplifier(expr.args[1])])
+            case "Iop_CmpNE32":
+                op64 = "Iop_CmpNE64"
+                if isinstance(expr.args[1], Const):
+                    val = int(str(expr.args[1]), 16)
+                    if val > 0x7fffffff:
+                        val = val - 0x100000000
+                    return Binop(op64, [binop_simplifier(expr.args[0]), Const(val)])
+                return Binop(op64, [binop_simplifier(expr.args[0]), binop_simplifier(expr.args[1])])
+            # --- CmpLT ---
+            case "Iop_CmpLT8S":
+                op64 = "Iop_CmpLT64S"
+                if isinstance(expr.args[1], Const):
+                    val = int(str(expr.args[1]), 16)
+                    if val > 0x7f:
+                        val = val - 0x100
+                    return Binop(op64, [binop_simplifier(expr.args[0]), Const(val)])
+                return Binop(op64, [binop_simplifier(expr.args[0]), binop_simplifier(expr.args[1])])
+            case "Iop_CmpLT16S":
+                op64 = "Iop_CmpLT64S"
+                if isinstance(expr.args[1], Const):
+                    val = int(str(expr.args[1]), 16)
+                    if val > 0x7fff:
+                        val = val - 0x10000
+                    return Binop(op64, [binop_simplifier(expr.args[0]), Const(val)])
+                return Binop(op64, [binop_simplifier(expr.args[0]), binop_simplifier(expr.args[1])])
+            case "Iop_CmpLT32S":
+                op64 = "Iop_CmpLT64S"
+                if isinstance(expr.args[1], Const):
+                    val = int(str(expr.args[1]), 16)
+                    if val > 0x7fffffff:
+                        val = val - 0x100000000
+                    return Binop(op64, [binop_simplifier(expr.args[0]), Const(val)])
+                return Binop(op64, [binop_simplifier(expr.args[0]), binop_simplifier(expr.args[1])])
+            case "Iop_CmpLT8U":
+                op64 = "Iop_CmpLT64U"
+                if isinstance(expr.args[1], Const):
+                    val = int(str(expr.args[1]), 16)
+                    return Binop(op64, [binop_simplifier(expr.args[0]), Const(val)])
+                return Binop(op64, [binop_simplifier(expr.args[0]), binop_simplifier(expr.args[1])])
+            case "Iop_CmpLT16U":
+                op64 = "Iop_CmpLT64U"
+                if isinstance(expr.args[1], Const):
+                    val = int(str(expr.args[1]), 16)
+                    return Binop(op64, [binop_simplifier(expr.args[0]), Const(val)])
+                return Binop(op64, [binop_simplifier(expr.args[0]), binop_simplifier(expr.args[1])])
+            case "Iop_CmpLT32U":
+                op64 = "Iop_CmpLT64U"
+                if isinstance(expr.args[1], Const):
+                    val = int(str(expr.args[1]), 16)
+                    return Binop(op64, [binop_simplifier(expr.args[0]), Const(val)])
+                return Binop(op64, [binop_simplifier(expr.args[0]), binop_simplifier(expr.args[1])])
+            # --- CmpLE ---
+            case "Iop_CmpLE8S":
+                op64 = "Iop_CmpLE64S"
+                if isinstance(expr.args[1], Const):
+                    val = int(str(expr.args[1]), 16)
+                    if val > 0x7f:
+                        val = val - 0x100
+                    return Binop(op64, [binop_simplifier(expr.args[0]), Const(val)])
+                return Binop(op64, [binop_simplifier(expr.args[0]), binop_simplifier(expr.args[1])])
+            case "Iop_CmpLE16S":
+                op64 = "Iop_CmpLE64S"
+                if isinstance(expr.args[1], Const):
+                    val = int(str(expr.args[1]), 16)
+                    if val > 0x7fff:
+                        val = val - 0x10000
+                    return Binop(op64, [binop_simplifier(expr.args[0]), Const(val)])
+                return Binop(op64, [binop_simplifier(expr.args[0]), binop_simplifier(expr.args[1])])
+            case "Iop_CmpLE32S":
+                op64 = "Iop_CmpLE64S"
+                if isinstance(expr.args[1], Const):
+                    val = int(str(expr.args[1]), 16)
+                    if val > 0x7fffffff:
+                        val = val - 0x100000000
+                    return Binop(op64, [binop_simplifier(expr.args[0]), Const(val)])
+                return Binop(op64, [binop_simplifier(expr.args[0]), binop_simplifier(expr.args[1])])
+            case "Iop_CmpLE8U":
+                op64 = "Iop_CmpLE64U"
+                if isinstance(expr.args[1], Const):
+                    val = int(str(expr.args[1]), 16)
+                    return Binop(op64, [binop_simplifier(expr.args[0]), Const(val)])
+                return Binop(op64, [binop_simplifier(expr.args[0]), binop_simplifier(expr.args[1])])
+            case "Iop_CmpLE16U":
+                op64 = "Iop_CmpLE64U"
+                if isinstance(expr.args[1], Const):
+                    val = int(str(expr.args[1]), 16)
+                    return Binop(op64, [binop_simplifier(expr.args[0]), Const(val)])
+                return Binop(op64, [binop_simplifier(expr.args[0]), binop_simplifier(expr.args[1])])
+            case "Iop_CmpLE32U":
+                op64 = "Iop_CmpLE64U"
+                if isinstance(expr.args[1], Const):
+                    val = int(str(expr.args[1]), 16)
+                    return Binop(op64, [binop_simplifier(expr.args[0]), Const(val)])
+                return Binop(op64, [binop_simplifier(expr.args[0]), binop_simplifier(expr.args[1])])
+            # --- CmpGT ---
+            case "Iop_CmpGT8S":
+                op64 = "Iop_CmpGT64S"
+                if isinstance(expr.args[1], Const):
+                    val = int(str(expr.args[1]), 16)
+                    if val > 0x7f:
+                        val = val - 0x100
+                    return Binop(op64, [binop_simplifier(expr.args[0]), Const(val)])
+                return Binop(op64, [binop_simplifier(expr.args[0]), binop_simplifier(expr.args[1])])
+            case "Iop_CmpGT16S":
+                op64 = "Iop_CmpGT64S"
+                if isinstance(expr.args[1], Const):
+                    val = int(str(expr.args[1]), 16)
+                    if val > 0x7fff:
+                        val = val - 0x10000
+                    return Binop(op64, [binop_simplifier(expr.args[0]), Const(val)])
+                return Binop(op64, [binop_simplifier(expr.args[0]), binop_simplifier(expr.args[1])])
+            case "Iop_CmpGT32S":
+                op64 = "Iop_CmpGT64S"
+                if isinstance(expr.args[1], Const):
+                    val = int(str(expr.args[1]), 16)
+                    if val > 0x7fffffff:
+                        val = val - 0x100000000
+                    return Binop(op64, [binop_simplifier(expr.args[0]), Const(val)])
+                return Binop(op64, [binop_simplifier(expr.args[0]), binop_simplifier(expr.args[1])])
+            case "Iop_CmpGT8U":
+                op64 = "Iop_CmpGT64U"
+                if isinstance(expr.args[1], Const):
+                    val = int(str(expr.args[1]), 16)
+                    return Binop(op64, [binop_simplifier(expr.args[0]), Const(val)])
+                return Binop(op64, [binop_simplifier(expr.args[0]), binop_simplifier(expr.args[1])])
+            case "Iop_CmpGT16U":
+                op64 = "Iop_CmpGT64U"
+                if isinstance(expr.args[1], Const):
+                    val = int(str(expr.args[1]), 16)
+                    return Binop(op64, [binop_simplifier(expr.args[0]), Const(val)])
+                return Binop(op64, [binop_simplifier(expr.args[0]), binop_simplifier(expr.args[1])])
+            case "Iop_CmpGT32U":
+                op64 = "Iop_CmpGT64U"
+                if isinstance(expr.args[1], Const):
+                    val = int(str(expr.args[1]), 16)
+                    return Binop(op64, [binop_simplifier(expr.args[0]), Const(val)])
+                return Binop(op64, [binop_simplifier(expr.args[0]), binop_simplifier(expr.args[1])])
+            # --- CmpGE ---
+            case "Iop_CmpGE8S":
+                op64 = "Iop_CmpGE64S"
+                if isinstance(expr.args[1], Const):
+                    val = int(str(expr.args[1]), 16)
+                    if val > 0x7f:
+                        val = val - 0x100
+                    return Binop(op64, [binop_simplifier(expr.args[0]), Const(val)])
+                return Binop(op64, [binop_simplifier(expr.args[0]), binop_simplifier(expr.args[1])])
+            case "Iop_CmpGE16S":
+                op64 = "Iop_CmpGE64S"
+                if isinstance(expr.args[1], Const):
+                    val = int(str(expr.args[1]), 16)
+                    if val > 0x7fff:
+                        val = val - 0x10000
+                    return Binop(op64, [binop_simplifier(expr.args[0]), Const(val)])
+                return Binop(op64, [binop_simplifier(expr.args[0]), binop_simplifier(expr.args[1])])
+            case "Iop_CmpGE32S":
+                op64 = "Iop_CmpGE64S"
+                if isinstance(expr.args[1], Const):
+                    val = int(str(expr.args[1]), 16)
+                    if val > 0x7fffffff:
+                        val = val - 0x100000000
+                    return Binop(op64, [binop_simplifier(expr.args[0]), Const(val)])
+                return Binop(op64, [binop_simplifier(expr.args[0]), binop_simplifier(expr.args[1])])
+            case "Iop_CmpGE8U":
+                op64 = "Iop_CmpGE64U"
+                if isinstance(expr.args[1], Const):
+                    val = int(str(expr.args[1]), 16)
+                    return Binop(op64, [binop_simplifier(expr.args[0]), Const(val)])
+                return Binop(op64, [binop_simplifier(expr.args[0]), binop_simplifier(expr.args[1])])
+            case "Iop_CmpGE16U":
+                op64 = "Iop_CmpGE64U"
+                if isinstance(expr.args[1], Const):
+                    val = int(str(expr.args[1]), 16)
+                    return Binop(op64, [binop_simplifier(expr.args[0]), Const(val)])
+                return Binop(op64, [binop_simplifier(expr.args[0]), binop_simplifier(expr.args[1])])
+            case "Iop_CmpGE32U":
+                op64 = "Iop_CmpGE64U"
+                if isinstance(expr.args[1], Const):
+                    val = int(str(expr.args[1]), 16)
+                    return Binop(op64, [binop_simplifier(expr.args[0]), Const(val)])
+                return Binop(op64, [binop_simplifier(expr.args[0]), binop_simplifier(expr.args[1])])
             case _:
                 # 다른 Binop은 그대로 반환
                 return Binop(expr.op, [binop_simplifier(expr.args[0]), binop_simplifier(expr.args[1])])
@@ -525,6 +751,17 @@ def binop_simplifier(expr: IRExpr | pc.IRConst | int):
     else:
         # 다른 타입은 그대로 반환
         return expr
+
+
+def extract_width(op: str) -> int:
+    """
+    연산자 문자열에서 비트폭(8, 16, 32 등)을 안전하게 추출
+    예: Iop_CmpLE32S -> 32, Iop_CmpLT8U -> 8
+    """
+    m = re.search(r'(\d+)', op)
+    if m:
+        return int(m.group(1))
+    raise ValueError(f"Cannot extract width from op: {op}")
 
 def simplify_addr_expr(expr):
     """

@@ -316,7 +316,7 @@ class Simulator:
 
     def generate_forall_bb(self, funcname: str, dic, sig_has_indirect_jump: bool) -> dict:
         if self.new_collect == {}:
-            print("generate new_collect")
+            # print("generate new_collect")
             self._init_function_for_all(funcname, sig_has_indirect_jump)
 
             all_addrs = []
@@ -376,7 +376,7 @@ class Simulator:
             self.new_collect = new_collect
         # 매번 호출때 마다 안뽑아도 됨
         else:
-            print("already generate new_collect")
+            # print("already generate new_collect")
             new_collect = self.new_collect
         return new_collect
 
@@ -1080,10 +1080,11 @@ class Symbol:
                 f"size={self.size}, is_function={self.is_function})")
 
 class Test:
-    def __init__(self, sigs: dict[str, list[Signature]]) -> None:
+    def __init__(self, sigs: dict[str, dict[str, list[Signature]]]) -> None:
         self.sigs = sigs
+        self.all_effects = {}
 
-    def test_path(self, binary_path: str, ground_truth: str, has_indirect_jump: bool) -> tuple[str, int]:
+    def test_path(self, binary_path: str, ground_truth: str, has_indirect_jump: bool) -> str:
         try:
             project = angr.Project(binary_path)
             simulator = Simulator(project)
@@ -1095,25 +1096,28 @@ class Test:
         return self.test_project(simulator, ground_truth, has_indirect_jump)
 
 
-    def test_project(self, simulator: Simulator, ground_truth: str, has_indirect_jump: bool) -> tuple[str, int]:
+    def test_project(self, simulator: Simulator, ground_truth: str, has_indirect_jump: bool) -> str:
         # if one think it's vuln, then it is vuln
         exist_patch = False
-        results = {"vuln": 0, "patch": 0}
+        results = {}
         funcnames = self.sigs.keys()
 
         for funcname in self.sigs.keys():
-            sigs = self.sigs[funcname]
-            # funcname = "ssl3_get_record"
-            # simulator = Simulator(simulator.proj)
-            # sigs = [<simulator.Signature object at 0x7fafd1f517e0>]
-            result = self.test_func(funcname, simulator, sigs, ground_truth, has_indirect_jump)
+            comb_sigs = self.sigs[funcname]
+            for comb, sigs in comb_sigs.items():
+                result = self.test_func(funcname, simulator, sigs, ground_truth, has_indirect_jump)
+                print(f"funcname: {funcname}, comb: {comb}, result: {result}")
+                if comb not in results:
+                    results[comb] = {"vuln": 0, "patch": 0}
+                results[comb]["vuln"] += result["vuln"]
+                results[comb]["patch"] += result["patch"]
             # if result == "vuln":
             #     return "vuln"
             # results.append(result)
-            for key, value in result.items():
-                if key not in results:
-                    results[key] = 0
-                results[key] += value
+                # for expect, score in result.items():
+                #     if expect not in results:
+                #         results[expect] = 0
+                #     results[expect] += score
                 
         # for result in results:
         #     if result == "vuln":
@@ -1124,15 +1128,37 @@ class Test:
         #     return "patch"
         # return "vuln"
         # return "patch"
-        if results["vuln"] > results["patch"]:
-            return "vuln", results["vuln"]
-        elif results["vuln"] < results["patch"]:
-            return "patch", results["patch"]
-        else:
-            # TODO: 나중에 무조건 틀린 케이스로 바꿔야함
-            logger.warning("vuln and patch have the same number of signatures, returning vuln for now")
-            return "vuln", results["vuln"]
+        
+        # if results["vuln"] > results["patch"]:
+        #     return "vuln", results["vuln"]
+        # elif results["vuln"] < results["patch"]:
+        #     return "patch", results["patch"]
+        # else:
+        #     # TODO: 나중에 무조건 틀린 케이스로 바꿔야함
+        #     logger.warning("vuln and patch have the same number of signatures, returning vuln for now")
+        #     return "vuln", results["vuln"]
         # return "patch", results["patch"]
+        # 가장 높은 score의 결과를 반환
+        max_score = ("None", 0)
+        best_comb = None
+        for comb, result in results.items():
+            if result["vuln"] > result["patch"]:
+                if result["vuln"] > max_score[1]:
+                    max_score = ("vuln", result["vuln"])
+                    best_comb = comb
+            elif result["patch"] > result["vuln"]:
+                if result["patch"] > max_score[1]:
+                    max_score = ("patch", result["patch"])
+                    best_comb = comb
+            else:
+                continue  # equal, skip
+        if max_score[0] == "None":
+            print("No valid signatures found, returning None")
+            # 일단은 vuln으로 처리
+            return "vuln"
+        
+        logger.info(f"Best combination: {best_comb}, result: {max_score}")
+        return max_score[0]
 
     def use_pattern(self, patterns: Patterns) -> str:
         for pattern in patterns.patterns:
@@ -1164,14 +1190,44 @@ class Test:
             dic.update(handle_pattern(sig.patterns))
             # print(f'{sig.funcname} {sig.state} {sig.patterns}') # ssl3_get_record modify [Patterns(patterns=[]), Patterns(patterns=[])]
             # time.sleep(10)
-        try:
-            traces: dict = simulator.generate_forall_bb(funcname, dic, sig_has_indirect_jump)
-            # print(f"traces: {traces}")
-            # exit(0)
-            # time.sleep(10)
-        except FunctionNotFound:
-            print(f"FunctionNotFound: {funcname}")
-            return None
+        if self.all_effects == {}:
+            try:
+                traces: dict = simulator.generate_forall_bb(funcname, dic, sig_has_indirect_jump)
+                # print(f"traces: {traces}")
+                # exit(0)
+                # time.sleep(10)
+            except FunctionNotFound:
+                print(f"FunctionNotFound: {funcname}")
+                return None
+            new_effects = {}
+            all_effects = traces
+            for k, v in all_effects.items():
+                new_key = rebuild_effects(k[0])
+                # try:
+                #     assert new_key == k[0], f"new_key {new_key} != old_key {k[0]}"
+                # except AssertionError:
+                #     print(f"new_key {new_key.ins.expr}, type: {type(new_key.ins.expr)}")
+                #     print(f"old_key {k[0].ins.expr}, type: {type(k[0].ins.expr)}")
+                #     exit(0)
+                k = (new_key, k[1])
+
+                old_v = deepcopy(v)
+                new_v = []
+                for effect in v:
+                    new_v.append(rebuild_effects(effect))
+                # assert new_v == old_v or str(new_v) == str(old_v), f"new_v {new_v} != old_v {old_v}"
+                # if new_v != old_v:
+                                # logger.info(f"str(new_v) == str(old_v): {str(nv) == str(ov)}")
+                                # logger.info(f"new_v type: {type(nv)}, old_v type: {type(ov)}")
+                                # logger.info(f"new_v ins: {nv.ins}, old_v ins: {ov.ins}")
+                                # logger.info(f"new_v expr: {nv.expr}, old_v expr: {ov.expr}")
+                    # raise AssertionError(f"new_v != old_v, {str(new_v) == str(ov)}")
+                new_effects[k] = new_v
+
+            all_effects = new_effects
+            self.all_effects = all_effects
+        else:
+            all_effects = self.all_effects
         result = {"vuln": 0,  "patch": 0}
         # test one hunk's signature
         for sig in sigs:
@@ -1234,43 +1290,11 @@ class Test:
                 continue
             vuln_match, patch_match = [], []
             # all_effects = extrace_effect(traces)
-            all_effects = traces
             
             # old_effects = deepcopy(all_effects)
             # all_effects = list(set(all_effects))
             # logger.info(f"before rebuild all_effects: {all_effects}")
-            if self.all_effects == {}:
-                print("rebuild all_effects")
-                new_effects = {}
-                for k, v in all_effects.items():
-                    new_key = rebuild_effects(k[0])
-                    # try:
-                    #     assert new_key == k[0], f"new_key {new_key} != old_key {k[0]}"
-                    # except AssertionError:
-                    #     print(f"new_key {new_key.ins.expr}, type: {type(new_key.ins.expr)}")
-                    #     print(f"old_key {k[0].ins.expr}, type: {type(k[0].ins.expr)}")
-                    #     exit(0)
-                    k = (new_key, k[1])
-
-                    old_v = deepcopy(v)
-                    new_v = []
-                    for effect in v:
-                        new_v.append(rebuild_effects(effect))
-                    # assert new_v == old_v or str(new_v) == str(old_v), f"new_v {new_v} != old_v {old_v}"
-                    # if new_v != old_v:
-                                    # logger.info(f"str(new_v) == str(old_v): {str(nv) == str(ov)}")
-                                    # logger.info(f"new_v type: {type(nv)}, old_v type: {type(ov)}")
-                                    # logger.info(f"new_v ins: {nv.ins}, old_v ins: {ov.ins}")
-                                    # logger.info(f"new_v expr: {nv.expr}, old_v expr: {ov.expr}")
-                        # raise AssertionError(f"new_v != old_v, {str(new_v) == str(ov)}")
-                    new_effects[k] = new_v
-
-                all_effects = new_effects
-                self.all_effects = all_effects
-            # rebuild도 한번만
-            else:
-                print("already rebuild all_effects")
-                all_effects = self.all_effects
+    
             # logger.info(f"after rebuild all_effects: {all_effects}")
             
             

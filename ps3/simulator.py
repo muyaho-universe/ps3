@@ -1105,8 +1105,9 @@ class Test:
         for funcname in self.sigs.keys():
             comb_sigs = self.sigs[funcname]
             for comb, sigs in comb_sigs.items():
+                logger.info(f"comb: {comb}")
                 result = self.test_func(funcname, simulator, sigs, ground_truth, has_indirect_jump)
-                print(f"funcname: {funcname}, comb: {comb}, result: {result}")
+                # print(f"funcname: {funcname}, comb: {comb}, result: {result}")
                 if comb not in results:
                     results[comb] = {"vuln": 0, "patch": 0}
                 results[comb]["vuln"] += result["vuln"]

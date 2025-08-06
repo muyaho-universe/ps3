@@ -116,16 +116,16 @@ def generate_signatures(test: TestJson, diffparser:DiffParser) -> tuple[dict[str
             if len(sigs.keys()) == 0:
                 logger.error(f"{test.cve} No signature generated")
                 assert False
-            for funcname in sigs.keys():
-                for compiler_opt, sig in sigs[funcname].items():
-                    # sig = sigs[funcname]
-                    if len(sig) > 1:
-                        sigs[funcname][compiler_opt] = valid_sig(sig)
-                    # sig = sigs[funcname]
-                    sigs[funcname][compiler_opt] = remove_duplicate(sig)
-                    logger.info(f"{compiler_opt}'s signatures")
-                    for s in sigs[funcname][compiler_opt]:
-                        s.show()
+    for funcname in sigs.keys():
+        for compiler_opt, sig in sigs[funcname].items():
+            # sig = sigs[funcname]
+            if len(sig) > 1:
+                sigs[funcname][compiler_opt] = valid_sig(sig)
+            # sig = sigs[funcname]
+            sigs[funcname][compiler_opt] = remove_duplicate(sig)
+            logger.info(f"{compiler_opt}'s signatures")
+            for s in sigs[funcname][compiler_opt]:
+                s.show()
     return sigs, all_indirect_jump
 
 def run_one(tests: list[TestJson]) -> list[TestResult]:

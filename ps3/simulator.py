@@ -1098,7 +1098,7 @@ class Test:
         exist_patch = False
         results = {}
         funcnames = self.sigs.keys()
-
+        state = ""
         for funcname in self.sigs.keys():
             comb_sigs = self.sigs[funcname]
             for comb, sigs in comb_sigs.items():
@@ -1109,6 +1109,21 @@ class Test:
                     results[comb] = {"vuln": 0, "patch": 0}
                 results[comb]["vuln"] += result["vuln"]
                 results[comb]["patch"] += result["patch"]
+                for sig in sigs:
+                    print(f"sig.state: {sig.state}")
+                    if sig.state == "modify":
+                        if sig.collect[0] == {} or sig.collect[0] is None:
+                            state = "patch"
+                        elif sig.collect[1] == {} or sig.collect[1] is None:
+                            state = "vuln"
+                        else:
+                            state = "modify"
+                    else:
+                        if sig.collect != {} and sig.collect is not None:
+                            if state == "":
+                                state = sig.state
+                            elif state != sig.state:
+                                state = "modify"
             # if result == "vuln":
             #     return "vuln"
             # results.append(result)
@@ -1138,17 +1153,35 @@ class Test:
         # return "patch", results["patch"]
         # 가장 높은 score의 결과를 반환
         max_score = ("None", 0)
-        best_comb = None
+        best_comb = None        
         for comb, result in results.items():
             if result["vuln"] > result["patch"]:
                 if result["vuln"] > max_score[1]:
                     max_score = ("vuln", result["vuln"])
                     best_comb = comb
+                elif result["vuln"] == max_score[1]:
+                    if state == "vuln" and max_score[0] == "patch":
+                        max_score = ("vuln", result["vuln"])
+                        best_comb = comb
             elif result["patch"] > result["vuln"]:
                 if result["patch"] > max_score[1]:
                     max_score = ("patch", result["patch"])
                     best_comb = comb
+                elif result["patch"] == max_score[1]:
+                    if state == "patch" and max_score[0] == "vuln":
+                        max_score = ("patch", result["patch"])
+                        best_comb = comb
             else:
+                # print(f"state: {state}")
+                # if state == "vuln":
+                #     if result["vuln"] == 2:
+                #         max_score = ("vuln", 2)
+                #         best_comb = comb
+                # elif state == "patch":
+                #     if result["patch"] == 2:
+                #         max_score = ("patch", 2)
+                #         best_comb = comb
+                # else:
                 continue  # equal, skip
         self.all_effects = {}
         if max_score[0] == "None":
@@ -1305,21 +1338,18 @@ class Test:
             
             test = False
             # essential a add patch
-            # if len(vuln_effect) == 0:
-            #     res = effect_compare(patch_effect, all_effects, "vuln")
-            #     if res:
-            #         test = True
-            #         result[res] = 100
-            # #         result.append(res)
-            # if len(patch_effect) == 0:
-            #     res = effect_compare(vuln_effect, all_effects, "patch")
-            #     if res:
-            #         test = True
-            #         # 틀림없는 res
-            #         result[res] = 100
-            #         # result.append(res)
-            # if test:
-            #     continue
+            if len(vuln_effect) == 0:
+                res = effect_compare(patch_effect, all_effects, "vuln")
+                if res:
+                    test = True
+                    result[res] += 2
+            if len(patch_effect) == 0:
+                res = effect_compare(vuln_effect, all_effects, "patch")
+                if res:
+                    test = True
+                    result[res] += 2
+            if test:
+                continue
             # for vuln in vuln_effect:
             #     if vuln in all_effects:
             #         vuln_match.append(vuln)

@@ -142,30 +142,53 @@ class DebugParser:
                         raise ValueError(f'Unrecognized ADDR2LINE output {l} !!!')
         except ValueError as e:
             bin_name = os.path.basename(self.binary_path)
-            logger.info(f'Failed to execute ADDR2LINE to {bin_name}, using gdb instead')
+            # logger.info(f'Failed to execute ADDR2LINE to {bin_name}, using gdb instead')
             # print(f'Failed to execute {ADDR2LINE} with error: {e}')
             dic = {}
-            # Fallback to gdb if addr2line fails
-            # cmd = f'gdb -batch -ex "file {binary_path}" -ex "info line *{addr}"'
-            # output: Line 103 of "crypto/lhash/lhash.c" starts at address 0x227cde <OPENSSL_LH_flush+158> and ends at 0x227cf0 <OPENSSL_LH_insert>.
+           # Fallback to gdb - batch process all addresses at once
+            if not addr_list:
+                return dic
+            # Build gdb command with multiple -ex options
+            gdb_commands = [f'gdb', '-batch', '-ex', f'file {self.binary_path}']
             for addr in addr_list:
-                cmd = f'gdb -batch -ex "file {self.binary_path}" -ex "info line *{addr}"'
-                try:
-                    output = subprocess.check_output(cmd, shell=True).decode('utf-8').strip()
-                    # print(f'GDB output: {output}')
-                    if output.startswith('Line'):
-                        tokens = output.split()
-                        lno = int(tokens[1])
-                        # addr = int(tokens[-1], 16)
-                        addr = int(addr, 16)
-                        if lno in dic:
-                            dic[lno].append(addr)
-                        else:
-                            dic[lno] = [addr]
+                gdb_commands.extend(['-ex', f'info line *{addr}'])
+            
+            try:
+                output = subprocess.check_output(gdb_commands).decode('utf-8')
+                lines = output.strip().split('\n')
+                
+                current_addr_idx = 0
+                for line in lines:
+                    line = line.strip()
+                    # print(f'Processing GDB output line: {line}')
+                    if line.startswith('Line'):
+                        # Parse: Line 103 of "crypto/lhash/lhash.c" starts at address 0x227cde <OPENSSL_LH_flush+158> and ends at 0x227cf0 <OPENSSL_LH_insert>.
+                        try:
+                            tokens = line.split()
+                            lno = int(tokens[1])
+                            addr = int(addr_list[current_addr_idx], 16)
+                            
+                            if lno in dic:
+                                dic[lno].append(addr)
+                            else:
+                                dic[lno] = [addr]
+                            current_addr_idx += 1
+                        except (ValueError, IndexError):
+                            logger.warn(f'Failed to parse GDB output: {line}')
+                            current_addr_idx += 1
+                    elif 'No line number information available' in line:
+                        # Skip addresses with no line info
+                        current_addr_idx += 1
+                        continue
+                    elif line.startswith('(gdb)') or not line:
+                        # Skip gdb prompts and empty lines
+                        continue
                     else:
-                        logger.warn(f'Unrecognized GDB output {output} !!!')
-                except subprocess.CalledProcessError as e:
-                    logger.error(f'Failed to execute {cmd} with error: {e}')
+                        # Other unrecognized output
+                        logger.warn(f'Unrecognized GDB output: {line}')
+            
+            except subprocess.CalledProcessError as e:
+                logger.error(f'Failed to execute gdb batch command with error: {e}')
         return dic
 
     @classmethod

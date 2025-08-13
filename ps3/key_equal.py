@@ -51,9 +51,9 @@ def _signature_equal(sig1, sig2):
 
     # 반대 조건, 반대 분기
     
-    if isinstance(info1.ins, Effect.Condition) and isinstance(info2.ins, Effect.Condition):
-        if branch1 != branch2 and _is_logical_negation(info1, info2):
-            return True
+    # if isinstance(info1.ins, Effect.Condition) and isinstance(info2.ins, Effect.Condition):
+    #     if branch1 != branch2 and _is_logical_negation(info1, info2):
+    #         return True
     
     return False
 

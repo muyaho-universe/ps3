@@ -31,19 +31,15 @@ def generate_signatures(test: TestJson, diffparser:DiffParser) -> tuple[dict[str
     all_indirect_jump = False
     for compiler in COMPILERS:
         for opt_level in OPT_LEVELS:
-            # TODO: 이제 gcc O0, O3, clang O0, O3로 컴파일된 바이너리가 시그니처로 생성될 수 있도록 수정해야함
-            vuln_name, patch_name = f"{test.cve}_vuln_{compiler}_{opt_level}", f"{test.cve}_patch_{compiler}_{opt_level}"        
-
+            # vuln_name, patch_name = f"ffmpeg-{test.cve}_vuln_{compiler}_{opt_level}", f"ffmpeg-{test.cve}_patch_{compiler}_{opt_level}"        
+            vuln_name, patch_name = f"{test.cve}_vuln_{compiler}_{opt_level}", f"{test.cve}_patch_{compiler}_{opt_level}"
                 # # vuln_name, patch_name = f"{test.cve}_vuln", f"{test.cve}_patch"
             vuln_path, patch_path = f"{BINARY_PATH}/{test.project}/{vuln_name}", f"{BINARY_PATH}/{test.project}/{patch_name}"
-            
             funcnames = []
             for diffs in diffparser.parse_result:
                 funcnames.extend(list(diffs['functions'].keys()))
             debugparser2 = DebugParser2.from_binary(vuln_path, patch_path, funcnames)
-            # binary_diffs = diffparser.get_binarylevel_change(debugparser2, test.cve)
             binary_diffs = diffparser.get_binarylevel_change(debugparser2)
-            # print(binary_diffs)
             signature_generator = Generator.from_binary(vuln_path, patch_path)
             
             for diffs in binary_diffs:
@@ -80,12 +76,24 @@ def generate_signatures(test: TestJson, diffparser:DiffParser) -> tuple[dict[str
                         if vuln_has_indirect_jump and not has_indirect_jump:
                             has_indirect_jump = True
                     elif hunk.type == "modify":
-                        collect_patch, patch_has_indirect_jump = signature_generator.generate(
-                            funcname, hunk.add, "patch", hunk.add_pattern)
+                        try:
+                            collect_patch, patch_has_indirect_jump = signature_generator.generate(
+                                funcname, hunk.add, "patch", hunk.add_pattern)
+                        except Exception as e:
+                            print(f"Error generating patch signature for {funcname}: {e}")
+                            collect_patch = None
+                            patch_has_indirect_jump = False
+                        try:
+                            collect_vuln, vuln_has_indirect_jump = signature_generator.generate(
+                                funcname, hunk.remove, "vuln", hunk.remove_pattern)
+                        except Exception as e:
+                            print(f"Error generating vuln signature for {funcname}: {e}")
+                            collect_vuln = None
+                            vuln_has_indirect_jump = False
                         # exit(0)
                         # print("=" * 20)
-                        collect_vuln, vuln_has_indirect_jump = signature_generator.generate(
-                            funcname, hunk.remove, "vuln", hunk.remove_pattern)
+                        # collect_vuln, vuln_has_indirect_jump = signature_generator.generate(
+                        #     funcname, hunk.remove, "vuln", hunk.remove_pattern)
                         
 
                         # print(f"before refine collect_patch: {collect_patch}")
@@ -132,10 +140,9 @@ def run_one(tests: list[TestJson]) -> list[TestResult]:
     global min_time, max_time, max_project
     test_results = []
     test = tests[0]
-    diff_name = f"{test.cve}_{test.commit[:6]}.diff"
-    # diff_name = f"{test.cve}.diff"
+    # diff_name = f"{test.cve}_{test.commit[:6]}.diff"
+    diff_name = f"{test.cve}.diff"
     diff_path = f"{DIFF_PATH}/{diff_name}"
-    # print(diff_path)
     diffparser = DiffParser.from_file(diff_path)
     # print(diffparser.parse_result)
     # print(f"diffparser.parse_result {diffparser.parse_result}")

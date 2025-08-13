@@ -115,6 +115,7 @@ def generalize_node(node: Node) -> Node:
         try:
             val = int(node.label[len("int: "):])
             if val >= 1000000:
+            # if val >= 5000:
                 return Node("Const: T", level=node.level)
         except Exception:
             pass
@@ -122,6 +123,7 @@ def generalize_node(node: Node) -> Node:
         try:
             val = int(node.label[len("IRConst: "):])
             if val >= 1000000:
+            # if val >= 5000:
                 return Node("Const: T", level=node.level)
         except Exception:
             pass
@@ -343,6 +345,38 @@ def rebuild_checker(original, ret, effect):
     return normalize_str(original) != normalize_str(str(ret)) and effect != ret
 
 
+def target_rebuild(effect: InspectInfo) -> InspectInfo:
+    if str(effect) == "None" or "IndirectJump" in str(effect):
+        return effect
+    rebuild_effect = rebuild_effects(effect)
+    try:
+        root = effect_to_node(rebuild_effect.ins)
+        new_effect = node_to_effect(root, fallback_effect=rebuild_effect)
+    except Exception as e:
+        print(f"target_rebuild: 파싱 실패: {rebuild_effect}, type(rebuild_effect): {type(rebuild_effect)}")
+        print(f"rebuild_effect: {rebuild_effect.ins}, type(rebuild_effect): {type(rebuild_effect.ins)}, error: {e}")
+        exit(0)
+
+    return InspectInfo(new_effect)
+
+# def single_refine_one(info: InspectInfo) -> InspectInfo:
+#     """
+#     InspectInfo의 ins가 Call 또는 Condition인 경우, 그 안의 expr를 T로 바꾼다.
+#     """
+#     effect = deepcopy(info.ins)
+   
+#     root = effect_to_node(info.ins)
+#     # root.print()
+#     new_tree = generalize_node(root)
+#     # new_tree.print() 
+#     try:
+#         new_effect = node_to_effect(new_tree, fallback_effect=effect)
+#     except Exception as e:
+#         print(f"info: {info}")
+#         new_tree.print()
+#         raise e
+    
+#     return InspectInfo(new_effect)
 def rebuild_effects(effect: InspectInfo) -> InspectInfo:
     """
     InspectInfo를 받아서, str 형태 그대로 최소화된 effect로 변환합니다.

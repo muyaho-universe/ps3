@@ -59,7 +59,6 @@ class DebugParser:
                         print(f"debug_info: {debug_info}")
                         exit(0)
                 i += 1
-            # print("addr:", addr)
             dic = self._addr_from_lines(addr)
             assert funcname is not None
             dic = {funcname: dic}
@@ -103,17 +102,20 @@ class DebugParser:
             addr_str = '\n'.join(addr_list)
             output, errors = p.communicate(input=addr_str.encode('utf-8'))
             # print("output:", output)
+            # print(f"len(output): {len(output)}")
             if errors:
                 print('Error:', errors.decode('utf-8'))
             else:
                 for line in output.decode('utf-8').splitlines():
                     l = line.strip()
-                    
+                    # print(f'Processing ADDR2LINE output line: {l}')
                     if l.startswith('0x'):
                         # E.g.
                         # 0xffffffc000a7aa9c: wcdcal_hwdep_ioctl_shared at /home/hang/pm/src-angler-20160801/sound/soc/codecs/wcdcal-hwdep.c:59
                         # 0xffffffc000a7ab18: wcdcal_hwdep_ioctl_shared at /home/hang/pm/src-angler-20160801/sound/soc/codecs/wcdcal-hwdep.c:77 (discriminator 1)
                         # print("l:", l)
+                        if l.endswith("??:?"):
+                            raise ValueError(f'ADDR2LINE failed {l} !!!')
                         try:
                             tokens = l.split(':')
                             addr = int(tokens[0], 16)
@@ -123,10 +125,14 @@ class DebugParser:
                                 dic[lno].append(addr)
                             else:
                                 dic[lno] = [addr]
-                        except ValueError:
-                            # logger.warn(f'Unrecognized ADDR2LINE output {l} !!!')
-                            raise ValueError(f'Unrecognized ADDR2LINE output {l} !!!')
-                            continue
+                        # except ValueError:
+                        #     # logger.warn(f'Unrecognized ADDR2LINE output {l} !!!')
+                        #     raise ValueError(f'Unrecognized ADDR2LINE output {l} !!!')
+                        #     continue
+                        except Exception as e:
+                            # print(f'Error processing line in ADDR2LINE output: {e}')
+                            # exit(0)
+                            raise ValueError(f'Error processing line in ADDR2LINE output: {e} !!!')
                     elif 'inlined by' in l:
                         # E.g.
                         # (inlined by) wcdcal_hwdep_ioctl_shared at /home/hang/pm/src-angler-20160801/sound/soc/codecs/wcdcal-hwdep.c:66
@@ -167,7 +173,6 @@ class DebugParser:
                             tokens = line.split()
                             lno = int(tokens[1])
                             addr = int(addr_list[current_addr_idx], 16)
-                            
                             if lno in dic:
                                 dic[lno].append(addr)
                             else:

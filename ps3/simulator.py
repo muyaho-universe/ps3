@@ -13,7 +13,7 @@ from symbol_value import WildCardSymbol
 import time
 import lief # type: ignore
 from settings import *
-from refinement import refine_sig, rebuild_effects, effect_to_node, single_refine
+from refinement import refine_sig, rebuild_effects, effect_to_node, single_refine, target_rebuild
 from copy import deepcopy
 import dominator_builder
 from key_equal import key_checker
@@ -516,7 +516,6 @@ class Simulator:
                 visit.update(result[0].addrs)
                 trace.update(result[0].inspect)
                 queue.extend(result)
-                # print(f"trace: {trace}")
 
             # else: # state run to the end
             #     if result.node.addr in reduce_addr:
@@ -1110,12 +1109,15 @@ class Test:
                 results[comb]["vuln"] += result["vuln"]
                 results[comb]["patch"] += result["patch"]
                 for sig in sigs:
-                    print(f"sig.state: {sig.state}")
+                    # print(f"sig.state: {sig.state}")
                     if sig.state == "modify":
                         if sig.collect[0] == {} or sig.collect[0] is None:
-                            state = "patch"
+                            if  sig.collect[1] != {} and sig.collect[1] is not None:
+                                state = "patch"
                         elif sig.collect[1] == {} or sig.collect[1] is None:
-                            state = "vuln"
+                            if sig.collect[0] != {} and sig.collect[0] is not None:
+                                state = "vuln"
+                            # state = "vuln"
                         else:
                             state = "modify"
                     else:
@@ -1210,7 +1212,8 @@ class Test:
             elif isinstance(ins, Effect.Store):
                 l += 1.5
             elif isinstance(ins, (Effect.Condition, Effect.Call)):
-                l += 2
+                # l += 2
+                l += 3
             else:
                 raise NotImplementedError(f"{type(ins)} is not considered.")
         return l
@@ -1234,7 +1237,8 @@ class Test:
             new_effects = {}
             all_effects = traces
             for k, v in all_effects.items():
-                new_key = rebuild_effects(k[0])
+                # new_key = rebuild_effects(k[0])
+                new_key = target_rebuild(k[0])
                 # try:
                 #     assert new_key == k[0], f"new_key {new_key} != old_key {k[0]}"
                 # except AssertionError:
@@ -1246,7 +1250,8 @@ class Test:
                 old_v = deepcopy(v)
                 new_v = []
                 for effect in v:
-                    new_v.append(rebuild_effects(effect))
+                    # new_v.append(rebuild_effects(effect))
+                    new_v.append(target_rebuild(effect))
                 # assert new_v == old_v or str(new_v) == str(old_v), f"new_v {new_v} != old_v {old_v}"
                 # if new_v != old_v:
                                 # logger.info(f"str(new_v) == str(old_v): {str(nv) == str(ov)}")
@@ -1255,7 +1260,7 @@ class Test:
                                 # logger.info(f"new_v expr: {nv.expr}, old_v expr: {ov.expr}")
                     # raise AssertionError(f"new_v != old_v, {str(new_v) == str(ov)}")
                 new_effects[k] = new_v
-            logger.info(f"new_effects: {new_effects}")
+            # logger.info(f"new_effects: {new_effects}")
             all_effects = new_effects
             self.all_effects = all_effects
         else:
@@ -1355,9 +1360,9 @@ class Test:
             #         vuln_match.append(vuln)
             if len(vuln_effect) != 0:
                 for vuln_key, vuln_value in vuln_effect.items():
-                    # vuln_same_key = key_checker(vuln_key, list(all_effects.keys()))
-                    # if vuln_same_key is not None:
-                    if vuln_key in all_effects:
+                    vuln_same_key = key_checker(vuln_key, list(all_effects.keys()))
+                    if vuln_same_key is not None:
+                    # if vuln_key in all_effects:
                         for vv in vuln_value:
                             # if vv in all_effects[vuln_key]:
                             if vv in all_effects[vuln_key]:
@@ -1367,14 +1372,13 @@ class Test:
             #         patch_match.append(patch)
             if len(patch_effect) != 0:
                 for patch_key, patch_value in patch_effect.items():
-                    # patch_same_key = key_checker(patch_key, list(all_effects.keys()))
-                    # if patch_same_key is not None:
-                    if patch_key in all_effects:
+                    patch_same_key = key_checker(patch_key, list(all_effects.keys()))
+                    # if patch_key in all_effects:
+                    if patch_same_key is not None:
                         for pv in patch_value:
-                            if pv in all_effects[patch_key]:
+                            if pv in all_effects[patch_same_key]:
                                 patch_match.append(pv)
             logger.info(f"vuln match {vuln_match}, patch match {patch_match}")
-            
             vuln_num = self._match2len(vuln_match)
             patch_num = self._match2len(patch_match)
             result["vuln"] += vuln_num

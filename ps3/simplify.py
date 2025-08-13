@@ -40,7 +40,7 @@ def is_generalization_of(g, c, depth=0):
     c = unwrap_const(c)
     # print(f"{tab}After unwrap, is_generalization_of: {type(g)} {g} vs {type(c)} {c} (depth={depth})")
     if isinstance(g, pe.Const) and isinstance(c, int):
-        # Const는 int로 취급
+        # Const는 int로 취급  
         g = g.con
 
     if isinstance(c, pe.Const) and isinstance(g, int):
@@ -67,8 +67,13 @@ def is_generalization_of(g, c, depth=0):
 
     # ----- 진짜 상수(pyVEX Const / IRConst) -----
     if isinstance(g, (Const, IRConst)) and not isinstance(g, SymbolicValue):
-        # print(f"{tab}Const/IRConst: {g} == {c}? {g.con == c.con}")
-        return g.con == c.con
+        try:
+            # print(f"{tab}Const/IRConst: {g} == {c}? {g.con == c.con}")
+            return g.con == c.con
+        except AttributeError as e:
+            # print(f"{tab}Const/IRConst comparison failed: {e}")
+            # print(f"{tab}Const/IRConst: {g} == {c}? {g.value == c.value}")
+            return g.value == c.value  # Fallback to value comparison
 
     # ----- 심볼릭 값(RegSymbol, ReturnSymbol, MemSymbol 등) -----
     if isinstance(g, MemSymbol) and isinstance(c, MemSymbol):
@@ -108,7 +113,7 @@ def is_generalization_of(g, c, depth=0):
         if g.op in COMMUTATIVE_OPS:
             # print(f"{tab}Checking commutative match for {g.op}")
             t = (is_generalization_of(g.args[0], c.args[1], depth+1) and
-                    is_generalization_of(g.args[1], c.args[0], depth+1))
+                 is_generalization_of(g.args[1], c.args[0], depth+1))
             # print(f"{tab}Commutative match? {t}")
             return t
         # print(f"{tab}Binop args do not match: {g.args} vs {c.args}")
@@ -279,7 +284,7 @@ def equal(expr1, expr2) -> bool:
         if contains_anysymbol(expr1) or contains_anysymbol(expr2):
             t = per_related(expr1, expr2)
             # print("Using per_related due to AnySymbol presence")
-            # print(f"per_related(expr1, expr2): {t}")
+            # print(f"per_related({expr1}, {expr2}): {t}")
             return t
         else:
             if isinstance(expr1, Effect.Call) and isinstance(expr2, Effect.Call):

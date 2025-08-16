@@ -84,7 +84,7 @@ def refine_one(myself: list[InspectInfo], other: list[InspectInfo]) -> list[Insp
         effect = deepcopy(info.ins) 
         temp = []
         go = True
-        # print("go into other with info:", info)
+        print("go into other with info:", info)
         root = effect_to_node(info.ins)
         first = True
         for generalized_tree in tree_possible_subs(root, fallback_effect=effect):
@@ -137,8 +137,10 @@ def single_refine_one(info: InspectInfo) -> InspectInfo:
     InspectInfo의 ins가 Call 또는 Condition인 경우, 그 안의 expr를 T로 바꾼다.
     """
     effect = deepcopy(info.ins)
-   
-    root = effect_to_node(info.ins)
+    try:
+        root = effect_to_node(info.ins)
+    except Exception as e:
+        raise ValueError(f"single_refine_one: 파싱 실패: {info}, effect.ins.expr: {info.ins.expr}")
     # root.print()
     new_tree = generalize_node(root)
     # new_tree.print() 
@@ -191,16 +193,6 @@ def refine_sig(vuln_effect: list[InspectInfo], patch_effect: list[InspectInfo]) 
     # vuln_effect = simplify_effects(vuln_effect)
     # patch_effect = simplify_effects(patch_effect)
     temp = []
-    # for i in range(len(vuln_effect)):
-    #     # if isinstance(vuln_effect[i].ins, Effect.Call):     
-    #     tree = effect_to_node(vuln_effect[i].ins)
-    #     tree.print()
-        
-    #     restored = node_to_effect(tree)
-    #     print(f"restored: {InspectInfo(restored)}")
-    #     temp.append(InspectInfo(restored))
-    #     print("=" * 50)
-    # print(f"old == restored: {old_vuln_effect == temp}")
     vuln_effect = refine_one(vuln_effect, patch_effect)
     logger = logging.getLogger(__name__)
 
@@ -346,9 +338,10 @@ def rebuild_checker(original, ret, effect):
 
 
 def target_rebuild(effect: InspectInfo) -> InspectInfo:
-    if str(effect) == "None" or "IndirectJump" in str(effect):
-        return effect
     rebuild_effect = rebuild_effects(effect)
+    if "None" in str(rebuild_effect)  or "IndirectJump" in str(rebuild_effect):
+        return rebuild_effect
+    
     try:
         root = effect_to_node(rebuild_effect.ins)
         new_effect = node_to_effect(root, fallback_effect=rebuild_effect)
@@ -359,24 +352,6 @@ def target_rebuild(effect: InspectInfo) -> InspectInfo:
 
     return InspectInfo(new_effect)
 
-# def single_refine_one(info: InspectInfo) -> InspectInfo:
-#     """
-#     InspectInfo의 ins가 Call 또는 Condition인 경우, 그 안의 expr를 T로 바꾼다.
-#     """
-#     effect = deepcopy(info.ins)
-   
-#     root = effect_to_node(info.ins)
-#     # root.print()
-#     new_tree = generalize_node(root)
-#     # new_tree.print() 
-#     try:
-#         new_effect = node_to_effect(new_tree, fallback_effect=effect)
-#     except Exception as e:
-#         print(f"info: {info}")
-#         new_tree.print()
-#         raise e
-    
-#     return InspectInfo(new_effect)
 def rebuild_effects(effect: InspectInfo) -> InspectInfo:
     """
     InspectInfo를 받아서, str 형태 그대로 최소화된 effect로 변환합니다.
@@ -947,7 +922,7 @@ def expr_to_node(expr, level=0) -> Node:
             print(f"expr_to_node: expr is Wildcard, {expr}, type(expr): {type(expr)}")
             exit(0)
         print(f"expr_to_node: Unknown expr type: {type(expr)}, expr: {expr}")
-        exit(0)
+        raise ValueError(f"Unknown expr type: {type(expr)}, expr: {expr}")
         return Node(f"[UNKNOWN expr] {expr} ({type(expr).__name__})", level=level)
 
 

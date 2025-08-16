@@ -1187,9 +1187,21 @@ class Test:
                 continue  # equal, skip
         self.all_effects = {}
         if max_score[0] == "None":
-            print("No valid signatures found, returning None")
+            print(f"No valid signatures found, state {state}, ground_truth {ground_truth}")
             # 일단은 vuln으로 처리
-            return "vuln"
+            if state == "vuln":
+                print("No valid signatures found, returning vuln")
+                return "patch"
+            elif state == "patch":
+                print("No valid signatures found, returning vuln")
+                return "vuln"
+            else:
+                if ground_truth == "vuln":
+                    print("As ground_truth is vuln, returning patch")
+                    return "patch"
+                else:
+                    print("As ground_truth is patch, returning vuln")
+                    return "vuln"
         
         logger.info(f"Best combination: {best_comb}, result: {max_score}")
         return max_score[0]

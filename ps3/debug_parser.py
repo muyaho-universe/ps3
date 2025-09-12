@@ -104,7 +104,8 @@ class DebugParser:
             # print("output:", output)
             # print(f"len(output): {len(output)}")
             if errors:
-                print('Error:', errors.decode('utf-8'))
+                # print('Error:', errors.decode('utf-8'))
+                raise ValueError(f'ADDR2LINE failed with error: {errors.decode("utf-8")}')
             else:
                 for line in output.decode('utf-8').splitlines():
                     l = line.strip()

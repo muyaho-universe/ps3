@@ -142,15 +142,28 @@ class Simulator:
         self.from_to = []
         self.new_collect = {}
 
-    def _init_function(self, funcname: str):
+    def _init_function(self, funcname: str, addresses: list[int]):
         symbol = self.proj.loader.find_symbol(funcname)
-
-        if symbol is None:
+        # print(f"symbol: {symbol}")
+        if symbol is None:        
+            # for sym in self.proj.loader.symbols:
+            #     print(f"symbol name: {sym.name}")
+            # exit(0)
             raise FunctionNotFound(
                 f"symbol {funcname} not found in binary {self.proj}")
         self.funcname = funcname
+        base_addr = self.proj.loader.main_object.min_addr
+        start_addr = symbol.rebased_addr
+        addr = addresses[0]
+        # print(f"start_addr: {hex(start_addr)}, base_addr: {hex(base_addr)}")
+        if start_addr - addr > 0x3F000:
+            for i in range(len(addresses)):
+                addresses[i] += base_addr
+        if start_addr < base_addr:
+            start_addr += base_addr
+        # print(f"start_addr: {hex(start_addr)}")
         cfg = self.proj.analyses.CFGFast(
-            regions=[(symbol.rebased_addr, symbol.rebased_addr + symbol.size)], normalize=True, resolve_indirect_jumps=True)
+            regions=[(start_addr, start_addr + symbol.size)], normalize=True, resolve_indirect_jumps=True)
         self.indirect_jumps = {}
         # ijr = indirect_jump_resolvers.IndirectJumpResolver(cfg=cfg)
         # ijr.resolve()
@@ -170,7 +183,6 @@ class Simulator:
                     self.indirect_jumps[k][target] = [idx]
                 else:
                     self.indirect_jumps[k][target].append(idx)
-        # print(f"indirect_jumps: {self.indirect_jumps}")
         
         function = None
         for func in cfg.functions:
@@ -181,12 +193,12 @@ class Simulator:
         self.graph = cfg.graph
         self.cfg = cfg
         self.dom_tree, self.super_node = dominator_builder.build_dominator_tree(cfg, funcname)
-        # print(f"self.parent_info: {self.parent_info}")
         # print("==" * 20)
         # dominator_builder.print_dom_tree(self.dom_tree, symbol.rebased_addr, labels=None)
     
         self.function = function
         self._init_map()
+        return addresses
 
     def _init_function_for_all(self, funcname: str, sig_has_indirect_jump: bool):
         symbol = self.proj.loader.find_symbol(funcname)
@@ -195,8 +207,12 @@ class Simulator:
             raise FunctionNotFound(
                 f"symbol {funcname} not found in binary {self.proj}")
         self.funcname = funcname
+        base_addr = self.proj.loader.main_object.min_addr
+        start_addr = symbol.rebased_addr
+        if start_addr < base_addr:
+            start_addr += base_addr
         cfg = self.proj.analyses.CFGFast(
-            regions=[(symbol.rebased_addr, symbol.rebased_addr + symbol.size)], normalize=True, resolve_indirect_jumps=True)
+            regions=[(start_addr, start_addr + symbol.size)], normalize=True, resolve_indirect_jumps=True)
         self.indirect_jumps = {}
         if sig_has_indirect_jump:
             # ijr = indirect_jump_resolvers.IndirectJumpResolver(cfg=cfg)
@@ -226,8 +242,8 @@ class Simulator:
         self.graph = cfg.graph
         self.cfg = cfg
         self.dom_tree, self.super_node = dominator_builder.build_dominator_tree(cfg, funcname)
-        # print(f"self.parent_info: {self.parent_info}")
         # dominator_builder.print_dom_tree(self.dom_tree, symbol.rebased_addr, labels=None)
+        # exit(0)
     
         self.function = function
         self._init_map()
@@ -372,6 +388,7 @@ class Simulator:
                 # print(f"key {k} not in supernode_map")
                 pass
         new_collect = {}
+        print(f"collect: {collect}")
         new_collect = _update_new_trace(collect, temp_supernode, self.supernode_parent_map, self.supernode_map, self.dom_tree, self.super_node, self.indirect_jumps)
         self.new_collect = new_collect
         
@@ -388,6 +405,7 @@ class Simulator:
         for addr in addresses:
             head_addr = None
             for block in self.function.blocks:
+                # print(f"block.instruction_addrs: {hexl(block.instruction_addrs)}, addr: {hex(addr)}, is in {addr in block.instruction_addrs}")
                 if addr in block.instruction_addrs:
                     head_addr = block.addr
                     break
@@ -405,6 +423,7 @@ class Simulator:
         # dom_tree: supernode_addr(parent) -> supernode_addr(child)
         result = {}
         self.supernode_map = self.get_supernode_for_addresses(addresses)
+        # print(f"self.supernode_map: {self.supernode_map}")
         for addr in addresses:
             supernode = self.supernode_map.get(addr)
             if supernode is None:
@@ -464,37 +483,48 @@ class Simulator:
             result[addr] = parent_addr
         return result
 
-    def generate(self, funcname: str, addresses: list[int], patterns) -> dict:
+    def generate(self, funcname: str, addresses: list[int], patterns) -> tuple[dict, bool]:
         # print("in Simulator generate")
         if addresses[0] < self.proj.loader.main_object.min_addr:
             addresses = [(addr + self.proj.loader.main_object.min_addr)
                          for addr in addresses]
-        self._init_function(funcname)
+        # print(f"addresses: {hexl(addresses)}")
+        try:
+            addresses = self._init_function(funcname, addresses)
+        except Exception as e:
+            logger.error(f"Error initializing function {funcname}: {e}")
+            return {}, False
         self.supernode_parent_map = self.get_parent_supernode_addr_for_addresses(addresses)
+        # print(f"self.supernode_parent_map: {self.supernode_parent_map}")
         self.address_parent = self.get_parent_supernode_nodeobj_for_addresses(addresses)
+        # print(f"self.address_parent: {self.address_parent}")
         trace = {}
         reduce_addr = set(self._reduce_addresses_by_basicblock(addresses))
+        # print(f"reduce_addr: {hexl(reduce_addr)}")
         reachable = self._reachable_set(reduce_addr)
+        # print(f"reachable: {hexl(reachable)}")
         start_node = self.cfg.get_any_node(self.function.addr)
+        # print(f"start_node: {start_node}")
         self.inspect_addrs = deepcopy(addresses)
         init_state = State(start_node, Environment())
         # based on basic block inspect
         init_state.inspect = {addr: {} for addr in reduce_addr}
         init_state.inspect_patterns = patterns
-        # print(f"self.supernode_parent_map: {self.supernode_parent_map}")
 
         for addr in addresses:
             parent_addr = self.supernode_parent_map[addr]
+            # print(f"addr: {hex(addr)}, parent_addr: {hex(parent_addr)}")
             # parent_addr = self.supernode_parent_map[addr].keys()
             if parent_addr not in init_state.inspect:
                 init_state.inspect[parent_addr] = {}
+            # print()
             if self.address_parent[addr] is not None:
+                # print(f"addr: {hex(addr)}, parent_addr: {hex(parent_addr)}")
                 for parent_addr in self.address_parent[addr]:
                         if parent_addr not in self.inspect_addrs:
                             self.inspect_addrs.append(parent_addr)
-        # print(f"addresses: {hexl(addresses)}")
-        # print(f"self.inspect_addrs: {hexl(self.inspect_addrs)}")
         has_indirect_jump = False
+        # print(f"self.inspect_addrs: {hexl(self.inspect_addrs)}")
         for addr in self.inspect_addrs:
             if addr in self.indirect_jumps_related_addrs:
                 has_indirect_jump = True
@@ -566,6 +596,7 @@ class Simulator:
         keys_to_delete = [k for k, v in new_trace.items() if v == []]
         for k in keys_to_delete:
             del new_trace[k]
+        # print(f"new_trace: {new_trace}, has_indirect_jump: {has_indirect_jump}")
         return new_trace, has_indirect_jump
     
 
@@ -574,7 +605,7 @@ class Simulator:
             state.addrs.append(state.node.addr)
             for statement in self.node2IR[state.node]:
                 machine_addr = self.IR2addr[statement]
-                # print(f"statement: {statement}, type: {type(statement)}, in self.inspect_addrs: {machine_addr in self.inspect_addrs}")
+                # print(f"statement: {statement}, in self.inspect_addrs: {machine_addr in self.inspect_addrs}")
                 if machine_addr in self.inspect_addrs:
                     # print(f"machine_addr: {hex(machine_addr)}")
                     # print(f"statement: {statement}, type: {type(statement)}")
@@ -679,6 +710,7 @@ class Simulator:
                         newstate.node = succ
                         states.append(newstate)
                     elif jump == "Ijk_Call":
+                        print("Call!")
                         # for succ, jump in state.node.successors_and_jumpkinds(False):
                         #     print(f"555 {succ} {jump}")
                         newstate = state.fork()
@@ -917,20 +949,22 @@ class Generator:
         return Generator(proj1, proj2)
 
     def generate(self, funcname: str, addresses: list[int], state: str, patterns: Patterns) -> dict:
-        # print("in Generator generate")
         patterns_ = handle_pattern(patterns)
         try:
             # print(state)
+            # print(f"original addr: {hexl(addresses)}, main_object.min_addr: {hex(self.vuln_proj.proj.loader.main_object.min_addr)}")
             if state == "vuln":
-                addresses = [
-                    addr + self.vuln_proj.proj.loader.main_object.min_addr for addr in addresses]
+                if addresses[0] < self.vuln_proj.proj.loader.main_object.min_addr:
+                    addresses = [
+                        addr + self.vuln_proj.proj.loader.main_object.min_addr for addr in addresses]
                 collect, vuln_has_indirect_jump = self.vuln_proj.generate(
                     funcname, addresses, patterns_)
             elif state == "patch":
-                addresses = [
-                    addr + self.patch_proj.proj.loader.main_object.min_addr for addr in addresses]
+                if addresses[0] < self.patch_proj.proj.loader.main_object.min_addr:
+                    addresses = [
+                        addr + self.patch_proj.proj.loader.main_object.min_addr for addr in addresses]
                 collect, patch_has_indirect_jump = self.patch_proj.generate(
-                    funcname, addresses, patterns_)
+                    funcname, addresses, patterns_)   
             else:
                 raise NotImplementedError(f"{state} is not considered.")
         except FunctionNotFound:
@@ -1187,21 +1221,23 @@ class Test:
                 continue  # equal, skip
         self.all_effects = {}
         if max_score[0] == "None":
-            print(f"No valid signatures found, state {state}, ground_truth {ground_truth}")
-            # 일단은 vuln으로 처리
-            if state == "vuln":
-                print("No valid signatures found, returning vuln")
-                return "patch"
-            elif state == "patch":
-                print("No valid signatures found, returning vuln")
-                return "vuln"
-            else:
-                if ground_truth == "vuln":
-                    print("As ground_truth is vuln, returning patch")
-                    return "patch"
-                else:
-                    print("As ground_truth is patch, returning vuln")
-                    return "vuln"
+            # Reverse 버전
+            # print(f"No valid signatures found, state {state}, ground_truth {ground_truth}")
+            # if state == "vuln":
+            #     print("No valid signatures found, returning vuln")
+            #     return "patch"
+            # elif state == "patch":
+            #     print("No valid signatures found, returning vuln")
+            #     return "vuln"
+            # else:
+            #     if ground_truth == "vuln":
+            #         print("As ground_truth is vuln, returning patch")
+            #         return "patch"
+            #     else:
+            #         print("As ground_truth is patch, returning vuln")
+            #         return "vuln"
+            # 원래 버전
+            return "vuln"
         
         logger.info(f"Best combination: {best_comb}, result: {max_score}")
         return max_score[0]
@@ -1273,6 +1309,7 @@ class Test:
                     # raise AssertionError(f"new_v != old_v, {str(new_v) == str(ov)}")
                 new_effects[k] = new_v
             # logger.info(f"new_effects: {new_effects}")
+            logger.info(f"all_effects: {all_effects}")
             all_effects = new_effects
             self.all_effects = all_effects
         else:
@@ -1348,7 +1385,6 @@ class Test:
             
             # old_effects = deepcopy(all_effects)
             # all_effects = list(set(all_effects))
-            # logger.info(f"before rebuild all_effects: {all_effects}")
     
             # logger.info(f"after rebuild all_effects: {all_effects}")
             
@@ -1377,7 +1413,7 @@ class Test:
                     # if vuln_key in all_effects:
                         for vv in vuln_value:
                             # if vv in all_effects[vuln_key]:
-                            if vv in all_effects[vuln_key]:
+                            if vv in all_effects[vuln_same_key]:
                                 vuln_match.append(vv)
             # for patch in patch_effect:                
             #     if patch in all_effects:
@@ -1396,80 +1432,6 @@ class Test:
             result["vuln"] += vuln_num
             result["patch"] += patch_num
         return result
-            # print(vuln_num, patch_num, funcname)
-        #     if vuln_num == 0 and patch_num == 0:
-        #         continue
-        #     elif patch_num == vuln_num:
-        #         continue
-        #     elif vuln_num >= patch_num:
-        #         # return "vuln", vuln_num
-        #         result.append(("vuln", vuln_num))
-        #     elif patch_num > vuln_num:
-        #         result.append(("patch", patch_num))
-        #     # result.append("patch" if patch_num > vuln_num else "vuln")
-        # # print(result)
-        # if len(result) == 0:
-        #     return None
-        # # if one think it's vuln, then it is vuln
-        # if "vuln" in result:
-        #     return "vuln"
-        # if "patch" in result:
-        #     return "patch"
-        # # if no vuln and patch, then it's vuln
-        # return "vuln"
-        #     if( patch_num == vuln_num) or (vuln_num == 0 and patch_num == 0):
-        #         if len(vuln_effect) != 0 and len(patch_effect) != 0:
-        #             logger.info(f"{funcname} {vuln_num} == {patch_num}, cannot determine")
-        #             if ground_truth == "patch":
-        #                 logger.info(f"result {result} cannot determine, return vuln")
-        #                 result.append("vuln")
-        #                 continue
-        #             else:
-        #                 logger.info(f"result {result} cannot determine, return patch")
-        #                 result.append("patch")
-        #                 continue
-        #         else:
-        #             continue
-        #     # if vuln_num >= patch_num:
-            
-        #     # if vuln_num == patch_num:
-        #     #     
-        #     if vuln_num > patch_num:
-        #         return "vuln"
-        #     result.append("patch" if patch_num > vuln_num else "vuln")
-        # # print(result)
-        # if len(result) == 0:
-        #     return None
-        # # if one think it's vuln, then it is vuln
-        # if "vuln" in result:
-        #     return "vuln"
-        # if "patch" in result:
-        #     return "patch"
-        # # if no match or same score, then always wrong
-        # if ground_truth == "patch":
-        #     logger.info(f"result {result} cannot determine, return patch")
-        #     return "vuln"
-        # else:
-        #     logger.info(f"result {result} cannot determine, return vuln")
-        #     return "patch"
-        #     if vuln_num == 0 and patch_num == 0:
-        #         continue
-        #     if patch_num == vuln_num:
-        #         continue
-        #     if vuln_num >= patch_num:
-        #         return "vuln"
-        #     result.append("patch" if patch_num > vuln_num else "vuln")
-        # if len(result) == 0:
-        #     print("result: None")
-        #     return None
-        # # if one think it's vuln, then it is vuln
-        # if "vuln" in result:
-        #     return "vuln"
-        # if "patch" in result:
-        #     return "patch"
-        # # if no vuln and patch, then it's vuln
-        # return "vuln"
-        # return "patch"
 
 def effect_compare(effect, all_effects, result_type) -> str | None:
     """

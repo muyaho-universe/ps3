@@ -346,9 +346,9 @@ def target_rebuild(effect: InspectInfo) -> InspectInfo:
         root = effect_to_node(rebuild_effect.ins)
         new_effect = node_to_effect(root, fallback_effect=rebuild_effect)
     except Exception as e:
-        print(f"target_rebuild: 파싱 실패: {rebuild_effect}, type(rebuild_effect): {type(rebuild_effect)}")
-        print(f"rebuild_effect: {rebuild_effect.ins}, type(rebuild_effect): {type(rebuild_effect.ins)}, error: {e}")
-        exit(0)
+        logger.info(f"target_rebuild: {rebuild_effect} 파싱 실패: {rebuild_effect.ins.expr}, type(rebuild_effect): {type(rebuild_effect.ins.expr)}, error: {e}")
+        # exit(0)
+        return rebuild_effect
 
     return InspectInfo(new_effect)
 
@@ -921,7 +921,12 @@ def expr_to_node(expr, level=0) -> Node:
         if str(expr) == "Wildcard":
             print(f"expr_to_node: expr is Wildcard, {expr}, type(expr): {type(expr)}")
             exit(0)
-        print(f"expr_to_node: Unknown expr type: {type(expr)}, expr: {expr}")
+        try:
+            temp = int(str(expr), 16)
+            return Node(f"int: {temp}", level=level)
+        except ValueError:
+            print(f"expr_to_node: Unknown expr type: {type(expr)}, expr: {expr}")
+
         raise ValueError(f"Unknown expr type: {type(expr)}, expr: {expr}")
         return Node(f"[UNKNOWN expr] {expr} ({type(expr).__name__})", level=level)
 

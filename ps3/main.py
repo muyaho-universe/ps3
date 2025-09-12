@@ -31,15 +31,19 @@ def generate_signatures(test: TestJson, diffparser:DiffParser) -> tuple[dict[str
     all_indirect_jump = False
     for compiler in COMPILERS:
         for opt_level in OPT_LEVELS:
-            # vuln_name, patch_name = f"ffmpeg-{test.cve}_vuln_{compiler}_{opt_level}", f"ffmpeg-{test.cve}_patch_{compiler}_{opt_level}"        
-            vuln_name, patch_name = f"{test.cve}_vuln_{compiler}_{opt_level}", f"{test.cve}_patch_{compiler}_{opt_level}"
-                # # vuln_name, patch_name = f"{test.cve}_vuln", f"{test.cve}_patch"
+            # print(f"compiler: {compiler}, opt_level: {opt_level}")
+            if test.project == 'FFmpeg':
+                vuln_name, patch_name = f"ffmpeg-{test.cve}_vuln_{compiler}_{opt_level}", f"ffmpeg-{test.cve}_patch_{compiler}_{opt_level}"
+            else:
+                vuln_name, patch_name = f"{test.cve}_vuln_{compiler}_{opt_level}", f"{test.cve}_patch_{compiler}_{opt_level}"
+            # vuln_name, patch_name = f"{test.cve}_{test.commit[:6]}_vuln", f"{test.cve}_{test.commit[:6]}_patch"
             vuln_path, patch_path = f"{BINARY_PATH}/{test.project}/{vuln_name}", f"{BINARY_PATH}/{test.project}/{patch_name}"
             funcnames = []
             for diffs in diffparser.parse_result:
                 funcnames.extend(list(diffs['functions'].keys()))
             debugparser2 = DebugParser2.from_binary(vuln_path, patch_path, funcnames)
             binary_diffs = diffparser.get_binarylevel_change(debugparser2)
+            # print(f"binary_diffs: {binary_diffs}")
             signature_generator = Generator.from_binary(vuln_path, patch_path)
             
             for diffs in binary_diffs:
@@ -149,9 +153,7 @@ def run_one(tests: list[TestJson]) -> list[TestResult]:
         
     # sigs[funcname] = {f"{compiler}_{opt_level}": []}
     sigs, has_indirect_jump = generate_signatures(test, diffparser)
-    
-    # TODO: sigs의 형태가 바뀌었음. sigs[funcname][compiler_opt] = [Signature]
-    # 이에 맞춰 test를 수정해야함
+
     testor = Test(sigs)
     if TEST_NUM >= 0:  # test specific number of tests
         if TEST_NUM == 0:

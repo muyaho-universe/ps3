@@ -37,7 +37,7 @@ sys.setrecursionlimit(10000)
 def hexl(l):
     return [hex(x) for x in l]
 
-def _update_new_trace(trace, temp_supernode, supernode_parent_map, supernode_map, dom_tree, super_node, indirect_jumps, target = False):
+def _update_new_trace(trace, temp_supernode, supernode_parent_map, supernode_map, dom_tree, super_node, indirect_jumps, supernode_grandparent_map = {}, supernode_map_from_grandparent = {}, target = False):
     """
     trace, temp_supernode, supernode_parent_map, supernode_map, dom_tree를 받아
     new_trace를 업데이트하는 공통 로직을 함수로 분리
@@ -75,37 +75,81 @@ def _update_new_trace(trace, temp_supernode, supernode_parent_map, supernode_map
 
     for k in trace.keys():
         # 1. supernode_parent_map에 있는 경우
+        # print(f"Processing k: {hex(k)}, k in supernode_parent_map: {k in supernode_parent_map}, k in temp_supernode: {k in temp_supernode}, k in super_node: {k in super_node}")
         if k in supernode_parent_map:
             key_success = False
             parent = supernode_parent_map[k]
             k_top = supernode_map[k]
             key_success = key_adder(parent, k_top, k)
-            if k == 4850000:
-                print(f"k: {hex(k)}, parent: {hex(parent)}, k_top: {hex(k_top)}, key_success: {key_success}")
-            # parent가 None이 아니고, key_success가 False면 계속 parent chain을 따라감
-            while not key_success and parent is not None:
-                previous_parent = parent
-                parent = supernode_parent_map.get(previous_parent)
-                k_top = supernode_map.get(previous_parent)
-                key_success = key_adder(parent, k_top, k)
-                if k == 4850000:
-                    print(f"k: {hex(k)}, parent: {hex(parent)}, k_top: {hex(k_top)}, key_success: {key_success}")
+            # print(f"key_success: {key_success}, parent: {parent}, k_top: {k_top}, k: {k}")
+            if target: 
+                # parent가 None이 아니고, key_success가 False면 계속 parent chain을 따라감
+                while not key_success and parent is not None:
+                    previous_parent = parent
+                    parent = supernode_parent_map.get(previous_parent)
+                    k_top = supernode_map.get(previous_parent)
+                    key_success = key_adder(parent, k_top, k)
+            else:
+                while not key_success and parent is not None:
+                    if parent in supernode_grandparent_map:
+                        previous_parent = parent
+                        parent = supernode_grandparent_map.get(previous_parent)
+                        k_top = supernode_map_from_grandparent.get(previous_parent)
+                        key_success = key_adder(parent, k_top, k)
+                    else:
+                        print(f"UNKOWN in supernode_parent_map: k: {hex(k)}, parent: {hex(parent)}, supernode_grandparent_map: {supernode_grandparent_map}")
+                        exit(0)
+
         # 2. temp_supernode에 있는 경우
         elif k in temp_supernode:
             for real_key in temp_supernode[k]:
+                key_success = False
                 parent = supernode_parent_map[real_key]
                 k_top = supernode_map[real_key]
-                key_adder(parent, k_top, k)
+                key_success = key_adder(parent, k_top, k)
+                # print(f"key_success: {key_success}, parent: {parent}, k_top: {k_top}, k: {k}")
+                if target:
+                    while not key_success and parent is not None:
+                        previous_parent = parent
+                        parent = supernode_parent_map.get(previous_parent)
+                        k_top = supernode_map.get(previous_parent)
+                        key_success = key_adder(parent, k_top, k)
+                else:
+                    while not key_success and parent is not None:
+                        if parent in supernode_grandparent_map:
+                            previous_parent = parent
+                            parent = supernode_grandparent_map.get(previous_parent)
+                            k_top = supernode_map_from_grandparent.get(previous_parent)
+                            key_success = key_adder(parent, k_top, k)
+                        else:
+                            print(f"UNKOWN in temp_supernode: k: {hex(k)}, parent: {hex(parent)}, supernode_grandparent_map: {supernode_grandparent_map}")
+                            exit(0)
         # 3. super_node에 있는 경우 (보통 단일 함수 블럭)
         elif k in super_node:
             new_k = super_node[k]
-            # print(f"k: {hex(k)}, new_k: {hex(new_k)} in super_node")
             if new_k in temp_supernode:
                 for real_key in temp_supernode[new_k]:
+                    key_success = False
                     parent = supernode_parent_map[real_key]
                     k_top = supernode_map[real_key]
-                    key_adder(parent, k_top, k)
-
+                    key_success = key_adder(parent, k_top, k)
+                    # print(f"key_success: {key_success}, parent: {parent}, k_top: {k_top}, k: {k}")
+                    if target:
+                        while not key_success and parent is not None:
+                            previous_parent = parent
+                            parent = supernode_parent_map.get(previous_parent)
+                            k_top = supernode_map.get(previous_parent)
+                            key_success = key_adder(parent, k_top, k)
+                    else:
+                        while not key_success and parent is not None:
+                            if parent in supernode_grandparent_map:
+                                previous_parent = parent
+                                parent = supernode_grandparent_map.get(previous_parent)
+                                k_top = supernode_map_from_grandparent.get(previous_parent)
+                                key_success = key_adder(parent, k_top, k)
+                            else:
+                                print(f"UNKOWN in super_node: k: {hex(k)}, parent: {hex(parent)}, supernode_grandparent_map: {supernode_grandparent_map}")
+                                exit(0)
     # indirect jump 처리
     for origin in trace.keys():
         if origin in indirect_jumps:
@@ -393,7 +437,7 @@ class Simulator:
                 pass
         new_collect = {}
         # print(f"collect: {collect}")
-        new_collect = _update_new_trace(collect, temp_supernode, self.supernode_parent_map, self.supernode_map, self.dom_tree, self.super_node, self.indirect_jumps, True)
+        new_collect = _update_new_trace(collect, temp_supernode, self.supernode_parent_map, self.supernode_map, self.dom_tree, self.super_node, self.indirect_jumps,supernode_grandparent_map= {},supernode_map_from_grandparent= {} ,target=True)
         self.new_collect = new_collect
         # print(f"new_collect: {new_collect}")
         # exit(0)
@@ -418,19 +462,25 @@ class Simulator:
 
         # 2. head address로 super_node에서 슈퍼노드 대표 주소를 찾는다.
         return {addr: self.super_node.get(head_addr, None) for addr, head_addr in addr_to_head.items()}
-    def get_parent_supernode_addr_for_addresses(self, addresses: list[int]) -> dict[int, int | None]:
+    def get_parent_supernode_addr_for_addresses(self, addresses: list[int], grandparent: bool = False) -> dict[int, int | None]:
         """
         각 address의 super node의 dominator tree상 parent(super node) block의 node head address를 반환합니다.
         :param addresses: 확인할 address 리스트
-        :return: {address: parent_supernode_addr or None} 딕셔리
+        :return: {address: parent_supernode_addr or None} 딕셔너리
         """
         # supernode_map: address -> supernode_addr
         # dom_tree: supernode_addr(parent) -> supernode_addr(child)
         result = {}
-        self.supernode_map = self.get_supernode_for_addresses(addresses)
-        # print(f"self.supernode_map: {self.supernode_map}")
+        supernode_map = {}
+        if grandparent:
+            self.grandparent_supernode_map = self.get_supernode_for_addresses(addresses)
+            supernode_map = self.grandparent_supernode_map
+        else:
+            self.supernode_map = self.get_supernode_for_addresses(addresses)
+            supernode_map = self.supernode_map
+        print(f"supernode_map: {supernode_map}")
         for addr in addresses:
-            supernode = self.supernode_map.get(addr)
+            supernode = supernode_map.get(addr)
             if supernode is None:
                 result[addr] = None
                 continue
@@ -493,29 +543,24 @@ class Simulator:
     def generate(self, funcname: str, addresses: list[int], patterns) -> tuple[dict, bool]:
         # print("in Simulator generate")
         parent_addrs = []
-        grandparent_addrs = {}
 
         if addresses[0] < self.proj.loader.main_object.min_addr:
             addresses = [(addr + self.proj.loader.main_object.min_addr)
                          for addr in addresses]
-        print(f"addresses: {hexl(addresses)}")
+        # print(f"addresses: {hexl(addresses)}")
         try:
             addresses = self._init_function(funcname, addresses)
         except Exception as e:
             logger.error(f"Error initializing function {funcname}: {e}")
             return {}, False
         self.supernode_parent_map = self.get_parent_supernode_addr_for_addresses(addresses)
-        print(f"self.supernode_parent_map: {self.supernode_parent_map}")
         self.address_parent, parent_addrs = self.get_parent_supernode_nodeobj_for_addresses(addresses)
+        parent_addrs = list(set(parent_addrs))
 
-        # supernode_grandparent_map = self.get_parent_supernode_addr_for_addresses(parent_addrs)
-        # grandparent_addrs, _ = self.get_parent_supernode_nodeobj_for_addresses(parent_addrs)
+        supernode_grandparent_map = self.get_parent_supernode_addr_for_addresses(parent_addrs, grandparent=True)
+        address_grandparent, grandparent_addrs = self.get_parent_supernode_nodeobj_for_addresses(parent_addrs)
+        grandparent_addrs = list(set(grandparent_addrs))
 
-        # print(f"supernode_grandparent_map: {supernode_grandparent_map}")
-        # print(f"grandparent_addrs: {grandparent_addrs}")
-        # for k, v in supernode_grandparent_map.items():
-        #     self.supernode_parent_map[k] = v
-        # print(f"self.supernode_parent_map: {self.supernode_parent_map}")
         trace = {}
         reduce_addr = set(self._reduce_addresses_by_basicblock(addresses))
         # print(f"reduce_addr: {hexl(reduce_addr)}")
@@ -531,29 +576,24 @@ class Simulator:
 
         for addr in addresses:
             parent_addr = self.supernode_parent_map[addr]
-            # print(f"addr: {hex(addr)}, parent_addr: {hex(parent_addr)}")
-            # parent_addr = self.supernode_parent_map[addr].keys()
             if parent_addr not in init_state.inspect:
                 init_state.inspect[parent_addr] = {}
-            # print()
             if self.address_parent[addr] is not None:
                 # print(f"addr: {hex(addr)}, parent_addr: {hex(parent_addr)}")
                 for parent_addr in self.address_parent[addr]:
                         if parent_addr not in self.inspect_addrs:
                             self.inspect_addrs.append(parent_addr)
-        # print(f"self.inspect_addrs: {hexl(self.inspect_addrs)}")
-        # # do-while을 위한 grand parent도 inspect_addrs에 추가
-        # for addr in parent_addrs:
-        #     grandparent_addr = self.supernode_parent_map[addr]
-        #     if grandparent_addr not in init_state.inspect:
-        #         init_state.inspect[grandparent_addr] = {}
-        #     if grandparent_addrs[addr] is not None:
-        #         for grandparent_addr in grandparent_addrs[addr]:
-        #             if grandparent_addr not in init_state.inspect:
-        #                 self.inspect_addrs.append(grandparent_addr)
-
+        
+        # grandparent part
+        for addr in parent_addrs:
+            grandparent_addr = supernode_grandparent_map[addr]
+            if grandparent_addr not in init_state.inspect:
+                init_state.inspect[grandparent_addr] = {}
+            if address_grandparent[addr] is not None:
+                for grandparent_addr in address_grandparent[addr]:
+                    if grandparent_addr not in self.inspect_addrs:
+                        self.inspect_addrs.append(grandparent_addr)
         has_indirect_jump = False
-        # print(f"self.inspect_addrs: {hexl(self.inspect_addrs)}")
         for addr in self.inspect_addrs:
             if addr in self.indirect_jumps_related_addrs:
                 has_indirect_jump = True
@@ -588,14 +628,13 @@ class Simulator:
                 if v not in temp_supernode:
                     temp_supernode[v] = []
                 temp_supernode[v].append(k)
-        print(f"trace: {trace}")
+        # print(f"trace: {trace}")
         # 기존 중복 코드 대신 함수 호출로 대체
-        new_trace = _update_new_trace(trace, temp_supernode, self.supernode_parent_map, self.supernode_map, self.dom_tree, self.super_node, self.indirect_jumps)
-        print(f"new_trace: {new_trace}, has_indirect_jump: {has_indirect_jump}")
+        new_trace = _update_new_trace(trace, temp_supernode, self.supernode_parent_map, self.supernode_map, self.dom_tree, self.super_node, self.indirect_jumps,supernode_grandparent_map= supernode_grandparent_map, supernode_map_from_grandparent= self.grandparent_supernode_map, target=False)
         keys_to_delete = [k for k, v in new_trace.items() if v == []]
         for k in keys_to_delete:
             del new_trace[k]
-        print(f"new_trace: {new_trace}, has_indirect_jump: {has_indirect_jump}")
+        # print(f"new_trace: {new_trace}")
         return new_trace, has_indirect_jump
     
 

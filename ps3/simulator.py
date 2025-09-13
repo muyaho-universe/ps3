@@ -37,11 +37,16 @@ sys.setrecursionlimit(10000)
 def hexl(l):
     return [hex(x) for x in l]
 
-def _update_new_trace(trace, temp_supernode, supernode_parent_map, supernode_map, dom_tree, super_node, indirect_jumps):
+def _update_new_trace(trace, temp_supernode, supernode_parent_map, supernode_map, dom_tree, super_node, indirect_jumps, target = False):
     """
     trace, temp_supernode, supernode_parent_map, supernode_map, dom_tree를 받아
     new_trace를 업데이트하는 공통 로직을 함수로 분리
     """
+    # if target:
+    #     print(f"supernode_parent_map:\n{supernode_parent_map}")
+    #     print(f"temp_supernode:\n{temp_supernode}")
+    #     print(f"super_node:\n{super_node}")
+
     def add_items_to_new_trace(key, items):
         if key not in new_trace:
             new_trace[key] = []
@@ -49,38 +54,48 @@ def _update_new_trace(trace, temp_supernode, supernode_parent_map, supernode_map
             new_trace[key].extend(item)
         new_trace[key] = clean(new_trace[key])
 
+    def key_adder(parent, k_top, trace_key):
+        # condition이 없으면 key가 만들어지지 못함
+        # do-while을 처리하지 못함
+        has_condition = False
+        if parent is None:
+            key = ("None", False)
+            add_items_to_new_trace(key, trace[trace_key].items())
+        else:
+            is_true_branch = dom_tree[parent][k_top].get('true_branch', False)
+            for _, traces in trace[parent].items():
+                for t in traces:
+                    if isinstance(t, InspectInfo) and isinstance(t.ins, Effect.Condition):
+                        key = (t, is_true_branch)
+                        add_items_to_new_trace(key, trace[trace_key].items())
+                        has_condition = True
+        return has_condition
+    
     new_trace = {}
 
     for k in trace.keys():
         # 1. supernode_parent_map에 있는 경우
         if k in supernode_parent_map:
+            key_success = False
             parent = supernode_parent_map[k]
             k_top = supernode_map[k]
-            if parent is None:
-                key = ("None", False)
-                add_items_to_new_trace(key, trace[k].items())
-            else:
-                is_true_branch = dom_tree[parent][k_top].get('true_branch', False)
-                for _, traces in trace[parent].items():
-                    for t in traces:
-                        if isinstance(t, InspectInfo) and isinstance(t.ins, Effect.Condition):
-                            key = (t, is_true_branch)
-                            add_items_to_new_trace(key, trace[k].items())
+            key_success = key_adder(parent, k_top, k)
+            if k == 4850000:
+                print(f"k: {hex(k)}, parent: {hex(parent)}, k_top: {hex(k_top)}, key_success: {key_success}")
+            # parent가 None이 아니고, key_success가 False면 계속 parent chain을 따라감
+            while not key_success and parent is not None:
+                previous_parent = parent
+                parent = supernode_parent_map.get(previous_parent)
+                k_top = supernode_map.get(previous_parent)
+                key_success = key_adder(parent, k_top, k)
+                if k == 4850000:
+                    print(f"k: {hex(k)}, parent: {hex(parent)}, k_top: {hex(k_top)}, key_success: {key_success}")
         # 2. temp_supernode에 있는 경우
         elif k in temp_supernode:
             for real_key in temp_supernode[k]:
                 parent = supernode_parent_map[real_key]
                 k_top = supernode_map[real_key]
-                if parent is None:
-                    key = ("None", False)
-                    add_items_to_new_trace(key, trace[k].items())
-                else:
-                    is_true_branch = dom_tree[parent][k_top].get('true_branch', False)
-                    for _, traces in trace[parent].items():
-                        for t in traces:
-                            if isinstance(t, InspectInfo) and isinstance(t.ins, Effect.Condition):
-                                key = (t, is_true_branch)
-                                add_items_to_new_trace(key, trace[k].items())
+                key_adder(parent, k_top, k)
         # 3. super_node에 있는 경우 (보통 단일 함수 블럭)
         elif k in super_node:
             new_k = super_node[k]
@@ -89,16 +104,7 @@ def _update_new_trace(trace, temp_supernode, supernode_parent_map, supernode_map
                 for real_key in temp_supernode[new_k]:
                     parent = supernode_parent_map[real_key]
                     k_top = supernode_map[real_key]
-                    if parent is None:
-                        key = ("None", False)
-                        add_items_to_new_trace(key, trace[k].items())
-                    else:
-                        is_true_branch = dom_tree[parent][k_top].get('true_branch', False)
-                        for _, traces in trace[parent].items():
-                            for t in traces:
-                                if isinstance(t, InspectInfo) and isinstance(t.ins, Effect.Condition):
-                                    key = (t, is_true_branch)
-                                    add_items_to_new_trace(key, trace[k].items())
+                    key_adder(parent, k_top, k)
 
     # indirect jump 처리
     for origin in trace.keys():
@@ -243,7 +249,6 @@ class Simulator:
         self.cfg = cfg
         self.dom_tree, self.super_node = dominator_builder.build_dominator_tree(cfg, funcname)
         # dominator_builder.print_dom_tree(self.dom_tree, symbol.rebased_addr, labels=None)
-        # exit(0)
     
         self.function = function
         self._init_map()
@@ -367,7 +372,6 @@ class Simulator:
         # print(f"self.address_parent: {self.address_parent}")
         # print(f"self.super_node: {self.super_node}")
         # print(f"self.supernode_map: {self.supernode_map}")
-        # exit(0)
         for parent, child in self.dom_tree.edges():
             # print(f"parent: {parent}, child: {child}")
             # print(f"from_to: {self.from_to}")
@@ -388,10 +392,11 @@ class Simulator:
                 # print(f"key {k} not in supernode_map")
                 pass
         new_collect = {}
-        print(f"collect: {collect}")
-        new_collect = _update_new_trace(collect, temp_supernode, self.supernode_parent_map, self.supernode_map, self.dom_tree, self.super_node, self.indirect_jumps)
+        # print(f"collect: {collect}")
+        new_collect = _update_new_trace(collect, temp_supernode, self.supernode_parent_map, self.supernode_map, self.dom_tree, self.super_node, self.indirect_jumps, True)
         self.new_collect = new_collect
-        
+        # print(f"new_collect: {new_collect}")
+        # exit(0)
         return new_collect
 
     def get_supernode_for_addresses(self, addresses: list[int]) -> dict[int, int]:
@@ -460,6 +465,7 @@ class Simulator:
 
         # 3. 도미네이터 트리에서 parent supernode 주소 찾기
         result = {}
+        parent_addrs = []
         for addr, supernode in addr_to_supernode.items():
             if supernode is None:
                 result[addr] = None
@@ -481,23 +487,35 @@ class Simulator:
                 # print(f"machine_addr: {hex(machine_addr)}")
                 # print(f"stmt: {stmt}")
             result[addr] = parent_addr
-        return result
+            parent_addrs.append(parent)
+        return result, parent_addrs
 
     def generate(self, funcname: str, addresses: list[int], patterns) -> tuple[dict, bool]:
         # print("in Simulator generate")
+        parent_addrs = []
+        grandparent_addrs = {}
+
         if addresses[0] < self.proj.loader.main_object.min_addr:
             addresses = [(addr + self.proj.loader.main_object.min_addr)
                          for addr in addresses]
-        # print(f"addresses: {hexl(addresses)}")
+        print(f"addresses: {hexl(addresses)}")
         try:
             addresses = self._init_function(funcname, addresses)
         except Exception as e:
             logger.error(f"Error initializing function {funcname}: {e}")
             return {}, False
         self.supernode_parent_map = self.get_parent_supernode_addr_for_addresses(addresses)
+        print(f"self.supernode_parent_map: {self.supernode_parent_map}")
+        self.address_parent, parent_addrs = self.get_parent_supernode_nodeobj_for_addresses(addresses)
+
+        # supernode_grandparent_map = self.get_parent_supernode_addr_for_addresses(parent_addrs)
+        # grandparent_addrs, _ = self.get_parent_supernode_nodeobj_for_addresses(parent_addrs)
+
+        # print(f"supernode_grandparent_map: {supernode_grandparent_map}")
+        # print(f"grandparent_addrs: {grandparent_addrs}")
+        # for k, v in supernode_grandparent_map.items():
+        #     self.supernode_parent_map[k] = v
         # print(f"self.supernode_parent_map: {self.supernode_parent_map}")
-        self.address_parent = self.get_parent_supernode_nodeobj_for_addresses(addresses)
-        # print(f"self.address_parent: {self.address_parent}")
         trace = {}
         reduce_addr = set(self._reduce_addresses_by_basicblock(addresses))
         # print(f"reduce_addr: {hexl(reduce_addr)}")
@@ -523,6 +541,17 @@ class Simulator:
                 for parent_addr in self.address_parent[addr]:
                         if parent_addr not in self.inspect_addrs:
                             self.inspect_addrs.append(parent_addr)
+        # print(f"self.inspect_addrs: {hexl(self.inspect_addrs)}")
+        # # do-while을 위한 grand parent도 inspect_addrs에 추가
+        # for addr in parent_addrs:
+        #     grandparent_addr = self.supernode_parent_map[addr]
+        #     if grandparent_addr not in init_state.inspect:
+        #         init_state.inspect[grandparent_addr] = {}
+        #     if grandparent_addrs[addr] is not None:
+        #         for grandparent_addr in grandparent_addrs[addr]:
+        #             if grandparent_addr not in init_state.inspect:
+        #                 self.inspect_addrs.append(grandparent_addr)
+
         has_indirect_jump = False
         # print(f"self.inspect_addrs: {hexl(self.inspect_addrs)}")
         for addr in self.inspect_addrs:
@@ -538,65 +567,35 @@ class Simulator:
                 continue
             if state.node.addr in visit:
                 continue
-            # logger.debug(f"Now begin {hex(state.node.addr)}")
             result = self._simulateBB(state, step_one=True)
-            # print(f"result: {result}")
             
             if isinstance(result, list):  # fork
                 visit.update(result[0].addrs)
                 trace.update(result[0].inspect)
                 queue.extend(result)
 
-            # else: # state run to the end
-            #     if result.node.addr in reduce_addr:
-            #         breakpoint()
-            #     visit.update(result.addrs)
-            #     trace.update(result.inspect)
-            #     queue.append(result)
-        # print(f"trace: {trace}")
         # trace를 parent-child 관계로 변환
         for parent, child in self.dom_tree.edges():
-            # print(f"parent: {hex(parent)}, child: {hex(child)}")
-            # print(f"from_to: {self.from_to}")
             is_true_branch = (parent, child) in self.from_to
             self.dom_tree[parent][child]['true_branch'] = is_true_branch
-            # print(f"0x{parent:x} -> 0x{child:x}, true_branch: {is_true_branch}")
 
         for parent, child in self.dom_tree.edges():
             is_true_branch = self.dom_tree[parent][child].get('true_branch', False)
-            # print(f"0x{parent:x} -> 0x{child:x}, true_branch: {is_true_branch}")
         new_trace = {}
-        # print(f"self.supernode_parent_map: {self.supernode_parent_map}")
-        # print("self.supernode_map: ")
-        # for k, v in self.supernode_map.items():
-        #     print(f"0x{k:x} -> 0x{v:x}")
-        # print("self.supernode_parent_map: ")
-        # for k, v in self.supernode_parent_map.items():
-        #     if v is None:
-        #         print(f"0x{k:x} -> None")
-        #     else:
-        #         print(f"0x{k:x} -> 0x{v:x}")
-        # for key in trace.keys():
-        #     print(f"key: {hex(key)}, in self.supernode_parent_map: {key in self.supernode_parent_map}")
-
-        # for k, v in trace.items():
-        #     print(f"key: {hex(k)}, value: {v}")
-        #     if isinstance(v, dict):
-        #         for k2, v2 in v.items():
-        #             print(f"  key2: {hex(k2)}, value2: {v2}")
         temp_supernode = {}
         for k, v in self.supernode_map.items():
             if v is not None:
                 if v not in temp_supernode:
                     temp_supernode[v] = []
                 temp_supernode[v].append(k)
-
+        print(f"trace: {trace}")
         # 기존 중복 코드 대신 함수 호출로 대체
         new_trace = _update_new_trace(trace, temp_supernode, self.supernode_parent_map, self.supernode_map, self.dom_tree, self.super_node, self.indirect_jumps)
+        print(f"new_trace: {new_trace}, has_indirect_jump: {has_indirect_jump}")
         keys_to_delete = [k for k, v in new_trace.items() if v == []]
         for k in keys_to_delete:
             del new_trace[k]
-        # print(f"new_trace: {new_trace}, has_indirect_jump: {has_indirect_jump}")
+        print(f"new_trace: {new_trace}, has_indirect_jump: {has_indirect_jump}")
         return new_trace, has_indirect_jump
     
 
@@ -732,6 +731,7 @@ class Simulator:
                 return states
 
 class Signature:
+
     def __init__(self, collect: dict, funcname: str, state: str, patterns) -> None:
         # print("in Signature")
         self.collect = collect

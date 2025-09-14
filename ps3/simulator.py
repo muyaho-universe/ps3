@@ -478,7 +478,7 @@ class Simulator:
         else:
             self.supernode_map = self.get_supernode_for_addresses(addresses)
             supernode_map = self.supernode_map
-        print(f"supernode_map: {supernode_map}")
+        # print(f"supernode_map: {supernode_map}")
         for addr in addresses:
             supernode = supernode_map.get(addr)
             if supernode is None:
@@ -1199,34 +1199,6 @@ class Test:
                                 state = sig.state
                             elif state != sig.state:
                                 state = "modify"
-            # if result == "vuln":
-            #     return "vuln"
-            # results.append(result)
-                # for expect, score in result.items():
-                #     if expect not in results:
-                #         results[expect] = 0
-                #     results[expect] += score
-                
-        # for result in results:
-        #     if result == "vuln":
-        #         return "vuln"
-        #     if result == "patch":
-        #         exist_patch = True
-        # if exist_patch:
-        #     return "patch"
-        # return "vuln"
-        # return "patch"
-        
-        # if results["vuln"] > results["patch"]:
-        #     return "vuln", results["vuln"]
-        # elif results["vuln"] < results["patch"]:
-        #     return "patch", results["patch"]
-        # else:
-        #     # TODO: 나중에 무조건 틀린 케이스로 바꿔야함
-        #     logger.warning("vuln and patch have the same number of signatures, returning vuln for now")
-        #     return "vuln", results["vuln"]
-        # return "patch", results["patch"]
-        # 가장 높은 score의 결과를 반환
         max_score = ("None", 0)
         best_comb = None        
         for comb, result in results.items():
@@ -1247,16 +1219,6 @@ class Test:
                         max_score = ("patch", result["patch"])
                         best_comb = comb
             else:
-                # print(f"state: {state}")
-                # if state == "vuln":
-                #     if result["vuln"] == 2:
-                #         max_score = ("vuln", 2)
-                #         best_comb = comb
-                # elif state == "patch":
-                #     if result["patch"] == 2:
-                #         max_score = ("patch", 2)
-                #         best_comb = comb
-                # else:
                 continue  # equal, skip
         self.all_effects = {}
         if max_score[0] == "None":
@@ -1442,9 +1404,7 @@ class Test:
                     result[res] += 2
             if test:
                 continue
-            # for vuln in vuln_effect:
-            #     if vuln in all_effects:
-            #         vuln_match.append(vuln)
+
             if len(vuln_effect) != 0:
                 for vuln_key, vuln_value in vuln_effect.items():
                     vuln_same_key = key_checker(vuln_key, list(all_effects.keys()))
@@ -1454,9 +1414,7 @@ class Test:
                             # if vv in all_effects[vuln_key]:
                             if vv in all_effects[vuln_same_key]:
                                 vuln_match.append(vv)
-            # for patch in patch_effect:                
-            #     if patch in all_effects:
-            #         patch_match.append(patch)
+
             if len(patch_effect) != 0:
                 for patch_key, patch_value in patch_effect.items():
                     patch_same_key = key_checker(patch_key, list(all_effects.keys()))
@@ -1479,27 +1437,32 @@ def effect_compare(effect, all_effects, result_type) -> str | None:
     result_type: str ("vuln" 또는 "patch")
     """
     for key, value in effect.items():
+        same_key = key_checker(key, list(all_effects.keys()))
         for v in value:
             if isinstance(v.ins, Effect.Call):
-                if key not in all_effects:
+                # if key not in all_effects:
+                if same_key is None:
                     logger.info(f"KEY MATCHING FAILED: {key} is not in all_effects; {all_effects.keys()}")
                     return result_type
-                if v not in all_effects[key]:
-                    logger.info(f"VALUE MATCHING FAILED: all_effects[{key}] does not contain {v}; {all_effects[key]}")
+                if v not in all_effects[same_key]:
+                    logger.info(f"VALUE MATCHING FAILED: all_effects[{same_key}] does not contain {v}; {all_effects[same_key]}")
                     return result_type
             if isinstance(v.ins, Effect.Condition):
                 in_true_branch = True
                 in_false_branch = True
-                if key not in all_effects:
-                    if (v, True) not in all_effects:
+                # if same_key not in all_effects:
+                if same_key is None:
+                    v_same_key_true = key_checker((v, True), list(all_effects.keys()))
+                    v_same_key_false = key_checker((v, False), list(all_effects.keys()))
+                    if v_same_key_true is None:
                         in_true_branch = False
-                    if (v, False) not in all_effects:
+                    if v_same_key_false is None:
                         in_false_branch = False
                     if not in_true_branch and not in_false_branch:
                         logger.info(f"KEY MATCHING FAILED: {key} and {v}'s True and False are not in all_effects; {all_effects.keys()}")
                         return result_type
                 else:
-                    if v not in all_effects[key]:
-                        logger.info(f"VALUE MATCHING FAILED: all_effects[{key}] does not contain {v}; {all_effects[key]}")
+                    if v not in all_effects[same_key]:
+                        logger.info(f"VALUE MATCHING FAILED: all_effects[{same_key}] does not contain {v}; {all_effects[same_key]}")
                         return result_type
     return None

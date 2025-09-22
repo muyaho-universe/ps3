@@ -111,7 +111,6 @@ class WrTmp(Statement):
         self.stmt = stmt
         
     def simulate(self, env: Environment, inspect: bool = False) -> None:
-        # print("WrTmp simulating")
         data = reduce(self.stmt.data, env)
         env.set_tmp(self.stmt.tmp, data)
         
@@ -120,7 +119,6 @@ class Exit(Statement):
         self.stmt = stmt
     
     def simulate(self, env: Environment, inspect: bool = False) -> IRExpr:
-        # print("Exit simulating")
         guard = reduce(self.stmt.guard, env)
         dst = reduce(self.stmt.dst, env)
         offsIP = self.stmt.offsIP

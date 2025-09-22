@@ -192,6 +192,7 @@ def run_one(tests: list[TestJson]) -> list[TestResult]:
             continue
         logger.info(
             f"{test.cve} {test.file} truth = {test.ground_truth} result = {one_result}")
+        # exit(0)
         test_results.append(TestResult(test, one_result))
         end = time.time()
         if end - start > max_time:

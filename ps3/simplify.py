@@ -457,7 +457,8 @@ def to_z3_true(expr: pe.IRExpr | pc.IRConst | int) -> z3.ExprRef:
             case "Iop_ExpCmpNE64":
                 return to_z3(expr.args[0]) != to_z3(expr.args[1])
             case _:
-                print(f"{expr.op} is not a valid op type")
+                pass
+                # print(f"{expr.op} is not a valid op type")
     return z3.BitVecVal(0, 64)
     assert False, (f"{expr}, {type(expr)} is not considered")
 

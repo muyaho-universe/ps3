@@ -34,6 +34,16 @@ ansi_escape = re.compile(r'\x1b\[[0-9;]*m')
 sys.setrecursionlimit(10000)
 
 
+def print_cfg(cfg):
+    print("CFG Nodes (Basic Blocks):")
+    for node in cfg.nodes():
+        print(f"Block addr: {hex(node.addr)}")
+
+    print("\nCFG Edges (Control Flow):")
+    for src, dst in cfg.graph.edges():
+        print(f"{hex(src.addr)} -> {hex(dst.addr)}")
+    print("==" * 20)
+
 def hexl(l):
     return [hex(x) for x in l]
 
@@ -242,6 +252,7 @@ class Simulator:
         assert function is not None
         self.graph = cfg.graph
         self.cfg = cfg
+        # print_cfg(cfg)
         self.dom_tree, self.super_node = dominator_builder.build_dominator_tree(cfg, funcname)
         # print("==" * 20)
         # dominator_builder.print_dom_tree(self.dom_tree, symbol.rebased_addr, labels=None)
@@ -291,9 +302,10 @@ class Simulator:
         assert function is not None
         self.graph = cfg.graph
         self.cfg = cfg
+        # print_cfg(cfg)
         self.dom_tree, self.super_node = dominator_builder.build_dominator_tree(cfg, funcname)
         # dominator_builder.print_dom_tree(self.dom_tree, symbol.rebased_addr, labels=None)
-    
+        # exit(0)
         self.function = function
         self._init_map()
 
@@ -416,10 +428,10 @@ class Simulator:
         # print(f"self.address_parent: {self.address_parent}")
         # print(f"self.super_node: {self.super_node}")
         # print(f"self.supernode_map: {self.supernode_map}")
+        # print(f"from_to: {self.from_to}")
         for parent, child in self.dom_tree.edges():
-            # print(f"parent: {parent}, child: {child}")
-            # print(f"from_to: {self.from_to}")
             is_true_branch = (parent, child) in self.from_to
+            # print(f"parent: {hex(parent)}, child: {hex(child)}, true_branch: {is_true_branch}")
             self.dom_tree[parent][child]['true_branch'] = is_true_branch
 
         for parent, child in self.dom_tree.edges():
@@ -613,10 +625,12 @@ class Simulator:
                 visit.update(result[0].addrs)
                 trace.update(result[0].inspect)
                 queue.extend(result)
-
+                # print(f"trace: {trace}")
+        # print(f"from_to: {self.from_to}")
         # trace를 parent-child 관계로 변환
-        for parent, child in self.dom_tree.edges():
+        for parent, child in self.dom_tree.edges():            
             is_true_branch = (parent, child) in self.from_to
+            # print(f"parent: {hex(parent)}, child: {hex(child)}, true_branch: {is_true_branch}")
             self.dom_tree[parent][child]['true_branch'] = is_true_branch
 
         for parent, child in self.dom_tree.edges():
@@ -643,14 +657,16 @@ class Simulator:
             state.addrs.append(state.node.addr)
             for statement in self.node2IR[state.node]:
                 machine_addr = self.IR2addr[statement]
-                # print(f"statement: {statement}, in self.inspect_addrs: {machine_addr in self.inspect_addrs}")
+                # print(f"statement: {statement}")
                 if machine_addr in self.inspect_addrs:
                     # print(f"machine_addr: {hex(machine_addr)}")
                     # print(f"statement: {statement}, type: {type(statement)}")
                     if isinstance(statement, stmt.Exit):
                         dst = statement.stmt.dst.value
+                        # print(f"Exit to {hex(dst)} from {hex(state.node.addr)}")
                         self.from_to.append((state.node.addr, dst))
                     cond = statement.simulate(state.env, True)
+                    # print(f"cond: {cond}, type: {type(cond)}, statement: {statement}, type: {type(statement)}")
                     basicblock_addr = state.node.addr
                     assert basicblock_addr in state.inspect
                     block = state.inspect[basicblock_addr]
@@ -668,7 +684,9 @@ class Simulator:
                     # logger.info(f"block2: {block}")                   
                 else:
                     cond = statement.simulate(state.env)
+                    # print(f"cond: {cond}, type: {type(cond)}, statement: {statement}, type: {type(statement)}")
             length = len(state.node.successors_and_jumpkinds(False))
+            # print(f"At {hex(state.node.addr)}, {length} successors")
             if length == 0:
                 return state
             if length == 1:
@@ -692,7 +710,6 @@ class Simulator:
                     state.node.block.pp()
                     output = output_stream.getvalue()
                     sys.stdout = sys.__stdout__
-                    # print(output)
                     # breakpoint()
                     if "call" in output:
                         call_name = output.split(
@@ -748,7 +765,6 @@ class Simulator:
                         newstate.node = succ
                         states.append(newstate)
                     elif jump == "Ijk_Call":
-                        print("Call!")
                         # for succ, jump in state.node.successors_and_jumpkinds(False):
                         #     print(f"555 {succ} {jump}")
                         newstate = state.fork()
@@ -1310,7 +1326,7 @@ class Test:
                     # raise AssertionError(f"new_v != old_v, {str(new_v) == str(ov)}")
                 new_effects[k] = new_v
             # logger.info(f"new_effects: {new_effects}")
-            logger.info(f"all_effects: {all_effects}")
+            # logger.info(f"all_effects: {all_effects}")
             all_effects = new_effects
             self.all_effects = all_effects
         else:

@@ -4,6 +4,7 @@ from symbol_value import ReturnSymbol
 from env import Environment
 from inspect_info import InspectInfo
 from effect import Effect
+import guest_amd64_defs_header as gh
 
 def amd64g_to_ite(expr: pe.CCall, env: Environment) -> pe.IRExpr:
     """
@@ -42,7 +43,7 @@ def amd64g_to_ite(expr: pe.CCall, env: Environment) -> pe.IRExpr:
         4: 'Iop_CmpEQ64',   # JZ/JE - Zero/Equal
         5: 'Iop_CmpNE64',   # JNZ/JNE - Not Zero/Not Equal
         6: 'Iop_CmpULE64S',  # JBE - Below or Equal
-        7: 'Iop_CmpUGT64S',  # JNBE - Not Below or Equal
+        7: 'Iop_CmpGT64S',  # JNBE - Not Below or Equal == Above
         8: 'Iop_CmpLT64S',   # JS  - Sign (negative)
         9: 'Iop_CmpGE64S',   # JNS - No Sign (positive)
         10: 'Iop_CmpPar64S', # JP  - Parity Even
@@ -59,12 +60,14 @@ def amd64g_to_ite(expr: pe.CCall, env: Environment) -> pe.IRExpr:
     op = int(str(args[0]), 16)
     dep1= args[2]
     dep2 = args[3]
+    # print(f"dep1: {dep1}, dep2: {dep2}")
     cond_op = cond_map.get(op)
     if cond_op is None:
         print(f"Unsupported condition code: {op}")
         exit(1)
     dep1_reduced = reduce(dep1, env)
     dep2_reduced = reduce(dep2, env)
+    # print(f"dep1_reduced: {dep1_reduced}, dep2_reduced: {dep2_reduced}")
     cond = pe.Binop(cond_op, [dep1_reduced, dep2_reduced])
     true_branch = pe.Const(pc.U64(1))
     false_branch = pe.Const(pc.U64(0))
@@ -81,7 +84,45 @@ def amd64g_to_ite(expr: pe.CCall, env: Environment) -> pe.IRExpr:
     # print(f"ite_info == bool_info: {ite_info == bool_info}")
     return bool_expr
 
-    
+def amd64g_rflags_to_cond(expr: pe.CCall, env: Environment) -> pe.IRExpr:
+    args = expr.args
+    if len(args) < 4:
+        print(f"Invalid number of arguments for amd64g_calculate_rflags_c: {len(args)}")
+        exit(1)
+    # for arg in args:
+    #     print(f"arg: {arg}")
+    reduced_args = [reduce(arg, env) for arg in args]
+    op = int(str(reduced_args[0]), 16)
+    dep1 = reduced_args[1]
+    dep2 = reduced_args[2]
+    # print(f"dep1: {dep1}, dep2: {dep2}")
+    temp_i = InspectInfo(Effect.Condition(pe.Unop('Iop_1Uto64', [pe.Binop('Iop_CmpLT64S', [dep1, dep2])])))
+    # print(f"temp_i: {temp_i}")
+    match op:
+        case gh.AMD64G_CC_OP_COPY:
+            return (reduce(dep1, env) >> gh.AMD64G_CC_SHIFT_C) & 1
+        case gh.AMD64G_CC_OP_LOGICB | gh.AMD64G_CC_OP_LOGICL | gh.AMD64G_CC_OP_LOGICW | gh.AMD64G_CC_OP_LOGICQ:
+            return pe.Const(pc.U64(0))  # Placeholder for unsupported logic operations
+        case gh.AMD64G_CC_OP_ADDB | gh.AMD64G_CC_OP_ADDW | gh.AMD64G_CC_OP_ADDL | gh.AMD64G_CC_OP_ADDQ:
+            cond = pe.Binop('Iop_CmpLT64S', [reduce(dep1, env), reduce(dep2, env)])
+            # print(f"cond AMD64G_CC_OP_ADDB: {InspectInfo(Effect.Condition(pe.Unop('Iop_1Uto64', [cond])))}")
+            return pe.Unop('Iop_1Uto64', [cond])
+        case gh.AMD64G_CC_OP_SUBB | gh.AMD64G_CC_OP_SUBW | gh.AMD64G_CC_OP_SUBL | gh.AMD64G_CC_OP_SUBQ:
+            cond = pe.Binop('Iop_CmpLT64S', [reduce(dep1, env), reduce(dep2, env)])
+            # print(f"cond AMD64G_CC_OP_SUBB: {InspectInfo(Effect.Condition(pe.Unop('Iop_1Uto64', [cond])))}")
+            return pe.Unop('Iop_1Uto64', [cond])
+        case gh.AMD64G_CC_OP_ADCB | gh.AMD64G_CC_OP_ADCW | gh.AMD64G_CC_OP_ADCL | gh.AMD64G_CC_OP_ADCQ:
+            cond = pe.Binop('Iop_CmpLE64S', [reduce(dep1, env), reduce(dep2, env)])
+            # print(f"cond AMD64G_CC_OP_ADCB: {InspectInfo(Effect.Condition(pe.Unop('Iop_1Uto64', [cond])))}")
+            return pe.Unop('Iop_1Uto64', [cond])
+        case gh.AMD64G_CC_OP_SBBB | gh.AMD64G_CC_OP_SBBW | gh.AMD64G_CC_OP_SBBL | gh.AMD64G_CC_OP_SBBQ:
+            cond = pe.Binop('Iop_CmpLE64S', [reduce(dep1, env), reduce(dep2, env)])
+            # print(f"cond AMD64G_CC_OP_SBBB: {InspectInfo(Effect.Condition(pe.Unop('Iop_1Uto64', [cond])))}")
+            return pe.Unop('Iop_1Uto64', [cond])
+        case _:
+            print(f"Unsupported rflags operation: {op}")
+            exit(1)
+            
 def reduce(expr: pe.IRExpr | pc.IRConst, env: Environment) -> pe.IRExpr:
     if not isinstance(expr, pe.IRExpr):
         if isinstance(expr, pc.IRConst):
@@ -135,6 +176,13 @@ def reduce(expr: pe.IRExpr | pc.IRConst, env: Environment) -> pe.IRExpr:
             try:
                 new_expr = amd64g_to_ite(expr, env)
                 # print(f"new_expr: {new_expr}, type(new_expr): {type(new_expr)}")
+                return new_expr
+            except Exception as e:
+                print(f"Error occurred: {e}")
+                exit(1)
+        elif expr.cee.name.startswith("amd64g_calculate_rflags_c"):
+            try:
+                new_expr = amd64g_rflags_to_cond(expr, env)
                 return new_expr
             except Exception as e:
                 print(f"Error occurred: {e}")

@@ -161,13 +161,17 @@ def single_refine(myself: dict[(InspectInfo, bool):list[InspectInfo]]) -> dict[(
     old_myself = deepcopy(myself)
     my_effects = {}
     for key, value in myself.items():
-        if key != ("None", False) and not str(key[0]).startswith("IndirectJump"):
+        if key != ("None", False) and not str(key[0]).startswith("IndirectJump") and str(key[0]) not in ("Condition: 1", "Condition: 0"):
             key_info = key[0] 
+            
             old_key = deepcopy(key_info)
             new_key_info = rebuild_effects(key_info)
             # assert new_key_info == old_key, f"Rebuild failed for key {new_key_info}\n!=\n {old_key}"
             
             rebuild_new_key = single_refine_one(new_key_info)
+            # if str(key_info) == "Condition: If(Mem(18446744073709551184 + SR(48)) == 121, 0, 1)":
+            #     print(f"key_info before single_refine_one: {key_info}, key_info.ins.expr: {key_info.ins.expr}\n")
+            #     print(f"rebuild_new_key after single_refine_one: {rebuild_new_key}, rebuild_new_key.ins.expr: {rebuild_new_key.ins.expr}")
             key = (rebuild_new_key, key[1])  # key는 (InspectInfo, bool) 형태
             # key = (new_key_info, key[1])  # key는 (InspectInfo, bool) 형태
         my_effects[key] = []
@@ -339,7 +343,7 @@ def rebuild_checker(original, ret, effect):
 
 def target_rebuild(effect: InspectInfo) -> InspectInfo:
     rebuild_effect = rebuild_effects(effect)
-    if "None" in str(rebuild_effect)  or "IndirectJump" in str(rebuild_effect):
+    if "None" in str(rebuild_effect)  or "IndirectJump" in str(rebuild_effect) or str(rebuild_effect) == "Condition: 1" or str(rebuild_effect) == "Condition: 0":
         return rebuild_effect
     
     try:
@@ -356,7 +360,7 @@ def rebuild_effects(effect: InspectInfo) -> InspectInfo:
     """
     InspectInfo를 받아서, str 형태 그대로 최소화된 effect로 변환합니다.
     """
-    if str(effect) == "None" or "IndirectJump" in str(effect):
+    if str(effect) == "None" or "IndirectJump" in str(effect) or str(effect) == "Condition: 1" or str(effect) == "Condition: 0":
         return effect
 
     original_str = str(effect).replace('\n', '').strip()

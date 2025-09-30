@@ -57,12 +57,20 @@ def _update_new_trace(trace, temp_supernode, supernode_parent_map, supernode_map
     #     print(f"temp_supernode:\n{temp_supernode}")
     #     print(f"super_node:\n{super_node}")
 
-    def add_items_to_new_trace(key, items):
+    def add_items_to_new_trace(key, items, target=target):
+        # if target:
+        #     print(f"Adding items to new_trace with key: {key}, key in new_trace: {key in new_trace}")
+        #     print(f"new_trace before adding: {new_trace}")
         if key not in new_trace:
             new_trace[key] = []
         for _, item in items:
+            # if target:
+            #     print(f"item to add: {item}")
             new_trace[key].extend(item)
         new_trace[key] = clean(new_trace[key])
+        # if target:
+        #     print(f"new_trace after adding: {new_trace}")
+        # trace_items = clean(new_trace[key])
 
     def key_adder(parent, k_top, trace_key):
         # condition이 없으면 key가 만들어지지 못함
@@ -265,6 +273,7 @@ class Simulator:
         symbol = self.proj.loader.find_symbol(funcname)
 
         if symbol is None:
+            print(f"symbol {funcname} not found in binary {self.proj}")
             raise FunctionNotFound(
                 f"symbol {funcname} not found in binary {self.proj}")
         self.funcname = funcname
@@ -899,6 +908,8 @@ class Signature:
         #     logger.info(single_site)
         for key, value in collect.items():
             logger.info(f"Key: {key}")
+            if str(key[0]) == "Condition: 1":
+                print(f"key[0].ins.expr: {key[0].ins.expr}")
             logger.info("------------------------------------------")
             for v in value:
                 logger.info(v)
@@ -1193,6 +1204,9 @@ class Test:
                 logger.info(f"comb: {comb}")
                 result = self.test_func(funcname, simulator, sigs, ground_truth, has_indirect_jump)
                 # print(f"funcname: {funcname}, comb: {comb}, result: {result}")
+                if result is None:
+                    # 함수 자체가 없을 경우가 있음
+                    continue
                 if comb not in results:
                     results[comb] = {"vuln": 0, "patch": 0}
                 results[comb]["vuln"] += result["vuln"]
@@ -1297,7 +1311,7 @@ class Test:
                 # exit(0)
                 # time.sleep(10)
             except FunctionNotFound:
-                print(f"FunctionNotFound: {funcname}")
+                # print(f"FunctionNotFound: {funcname}")
                 return None
             new_effects = {}
             all_effects = traces
@@ -1325,7 +1339,7 @@ class Test:
                                 # logger.info(f"new_v expr: {nv.expr}, old_v expr: {ov.expr}")
                     # raise AssertionError(f"new_v != old_v, {str(new_v) == str(ov)}")
                 new_effects[k] = new_v
-            # logger.info(f"new_effects: {new_effects}")
+            logger.info(f"new_effects: {new_effects}")
             # logger.info(f"all_effects: {all_effects}")
             all_effects = new_effects
             self.all_effects = all_effects

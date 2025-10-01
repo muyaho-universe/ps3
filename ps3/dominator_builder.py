@@ -29,7 +29,7 @@ def build_dominator_tree(cfg, target_func_name):
     super_node = merge_nodes(nodes)
     if G.number_of_nodes() == 0:
         print(f"[!] No edges found in function '{target_func_name}'.")
-        return None
+        return nx.DiGraph(), {}
     
     # 6. Immediate dominators 계산
     idoms = nx.immediate_dominators(G, entry_node)

@@ -98,6 +98,7 @@ def amd64g_rflags_to_cond(expr: pe.CCall, env: Environment) -> pe.IRExpr:
     # print(f"dep1: {dep1}, dep2: {dep2}")
     temp_i = InspectInfo(Effect.Condition(pe.Unop('Iop_1Uto64', [pe.Binop('Iop_CmpLT64S', [dep1, dep2])])))
     # print(f"temp_i: {temp_i}")
+    AMD64G_CC_MASK_C = pe.Const(1 << 0)
     match op:
         case gh.AMD64G_CC_OP_COPY:
             return (reduce(dep1, env) >> gh.AMD64G_CC_SHIFT_C) & 1
@@ -119,6 +120,12 @@ def amd64g_rflags_to_cond(expr: pe.CCall, env: Environment) -> pe.IRExpr:
             cond = pe.Binop('Iop_CmpLE64S', [reduce(dep1, env), reduce(dep2, env)])
             # print(f"cond AMD64G_CC_OP_SBBB: {InspectInfo(Effect.Condition(pe.Unop('Iop_1Uto64', [cond])))}")
             return pe.Unop('Iop_1Uto64', [cond])
+        case gh.AMD64G_CC_OP_INCB | gh.AMD64G_CC_OP_INCW | gh.AMD64G_CC_OP_INCL | gh.AMD64G_CC_OP_INCQ:
+            # original code said first arg is ndep
+            # cf = pe.Binop('Iop_And64', [reduce(ndep, env), AMD64G_CC_MASK_C])
+            return pe.Const(pc.U64(0))  # INC does not affect CF
+        case gh.AMD64G_CC_OP_DECB | gh.AMD64G_CC_OP_DECW | gh.AMD64G_CC_OP_DECL | gh.AMD64G_CC_OP_DECQ:
+            return pe.Const(pc.U64(0))  # DEC does not affect CF
         case _:
             print(f"Unsupported rflags operation: {op}")
             exit(1)

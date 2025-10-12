@@ -68,7 +68,20 @@ class DiffParser:
 
     # Improve the _get_function_name function
     # now whitespace is not considered
-    def _get_function_name(self, section_header: str) -> str:
+    def _get_function_name(self, section_header: str, hunk=None) -> str:
+    # 1. hunk에서 함수 선언(추가/삭제) 패턴 우선 탐색
+        if hunk is not None:
+            lines = list(hunk.target_lines())
+            for line in lines:
+                if line.is_added or line.is_removed:
+                    tokens = list(self.lexer.get_tokens(line.value))
+                    for i in range(len(tokens) - 2):
+                        # 함수 선언: Token.Name.Function + '(' + '{'
+                        if (tokens[i][0] == Token.Name.Function and
+                            tokens[i+1][0] == Token.Punctuation and tokens[i+1][1] == '(' and
+                            any(t[0] == Token.Punctuation and t[1] == '{' for t in tokens[i+2:])):
+                            return tokens[i][1]
+        # 2. 기존 방식 fallback
         tokens = list(self.lexer.get_tokens(section_header))
         deep = 0
         for i in reversed(range(len(tokens))):
@@ -87,13 +100,13 @@ class DiffParser:
                     return token[1]
         return None
 
-
     def _parse_patchfile(self, patch_file: PatchedFile) -> dict:
         dic = {}
         dic['path'] = patch_file.path
         dic['functions'] = {}
         for hook in patch_file:
-            function_name = self._get_function_name(hook.section_header)
+            # function_name = self._get_function_name(hook.section_header)
+            function_name = self._get_function_name(hook.section_header, hook)  # hunk를 인자로 넘김
             if function_name is not None:
                 if function_name not in dic['functions']:
                     dic['functions'][function_name] = []

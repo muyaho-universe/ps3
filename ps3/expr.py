@@ -126,6 +126,21 @@ def amd64g_rflags_to_cond(expr: pe.CCall, env: Environment) -> pe.IRExpr:
             return pe.Const(pc.U64(0))  # INC does not affect CF
         case gh.AMD64G_CC_OP_DECB | gh.AMD64G_CC_OP_DECW | gh.AMD64G_CC_OP_DECL | gh.AMD64G_CC_OP_DECQ:
             return pe.Const(pc.U64(0))  # DEC does not affect CF
+        case gh.AMD64G_CC_OP_SHLB:
+            cf = pe.Binop('Iop_Shr64', [reduce(dep2, env), pe.Const(pc.U64(7))])
+            return cf
+        case gh.AMD64G_CC_OP_SHLW:
+            cf = pe.Binop('Iop_Shr64', [reduce(dep2, env), pe.Const(pc.U64(15))])
+            return cf
+        case gh.AMD64G_CC_OP_SHLL:
+            cf = pe.Binop('Iop_Shr64', [reduce(dep2, env), pe.Const(pc.U64(31))])
+            return cf
+        case gh.AMD64G_CC_OP_SHLQ:
+            cf = pe.Binop('Iop_Shr64', [reduce(dep2, env), pe.Const(pc.U64(63))])
+            return cf
+        case gh.AMD64G_CC_OP_SHRB | gh.AMD64G_CC_OP_SHRW | gh.AMD64G_CC_OP_SHRL | gh.AMD64G_CC_OP_SHRQ:
+            cf = pe.Binop('Iop_And64', [reduce(dep1, env), pe.Const(pc.U64(1))])
+            return cf
         case _:
             print(f"Unsupported rflags operation: {op}")
             exit(1)

@@ -908,8 +908,6 @@ class Signature:
         #     logger.info(single_site)
         for key, value in collect.items():
             logger.info(f"Key: {key}")
-            if str(key[0]) == "Condition: 1":
-                print(f"key[0].ins.expr: {key[0].ins.expr}")
             logger.info("------------------------------------------")
             for v in value:
                 logger.info(v)
@@ -1252,21 +1250,21 @@ class Test:
                 continue  # equal, skip
         self.all_effects = {}
         if max_score[0] == "None":
-            # Reverse 버전
-            # print(f"No valid signatures found, state {state}, ground_truth {ground_truth}")
-            # if state == "vuln":
-            #     print("No valid signatures found, returning vuln")
-            #     return "patch"
-            # elif state == "patch":
-            #     print("No valid signatures found, returning vuln")
-            #     return "vuln"
-            # else:
-            #     if ground_truth == "vuln":
-            #         print("As ground_truth is vuln, returning patch")
-            #         return "patch"
-            #     else:
-            #         print("As ground_truth is patch, returning vuln")
-            #         return "vuln"
+            # Reverse 버전 strict
+            print(f"No valid signatures found, state {state}, ground_truth {ground_truth}")
+            if state == "vuln":
+                print("No valid signatures found, returning vuln")
+                return "patch"
+            elif state == "patch":
+                print("No valid signatures found, returning vuln")
+                return "vuln"
+            else:
+                if ground_truth == "vuln":
+                    print("As ground_truth is vuln, returning patch")
+                    return "patch"
+                else:
+                    print("As ground_truth is patch, returning vuln")
+                    return "vuln"
             # 원래 버전
             return "vuln"
         
@@ -1304,7 +1302,8 @@ class Test:
             dic.update(handle_pattern(sig.patterns))
             # print(f'{sig.funcname} {sig.state} {sig.patterns}') # ssl3_get_record modify [Patterns(patterns=[]), Patterns(patterns=[])]
             # time.sleep(10)
-        if self.all_effects == {}:
+        # if self.all_effects == {}:
+        if funcname not in self.all_effects:
             try:
                 traces: dict = simulator.generate_forall_bb(funcname, dic, sig_has_indirect_jump)
                 # print(f"traces: {traces}")
@@ -1342,9 +1341,9 @@ class Test:
             logger.info(f"new_effects: {new_effects}")
             # logger.info(f"all_effects: {all_effects}")
             all_effects = new_effects
-            self.all_effects = all_effects
+            self.all_effects[funcname] = all_effects
         else:
-            all_effects = self.all_effects
+            all_effects = self.all_effects[funcname]
         result = {"vuln": 0,  "patch": 0}
         # test one hunk's signature
         for sig in sigs:
